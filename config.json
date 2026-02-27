@@ -1,0 +1,29 @@
+{
+  "device_index": 0,
+  "sample_rate": 44100,
+  "blocksize": 2048,
+  "visuals": {
+    "default_width": 1280,
+    "default_height": 720,
+    "brightness": 1.0,
+    "palette": "default",
+    "show_lyrics": true
+  },
+  "audio": {
+    "gain": 1.5,
+    "bass_boost": 1.5,
+    "mid_boost": 1.0,
+    "treble_boost": 1.0,
+    "smoothing": 0.12,
+    "bass_divisor": 200,
+    "mid_divisor": 50,
+    "treble_divisor": 8,
+    "energy_divisor": 0.5
+  },
+  "spotify": {
+    "enabled": true,
+    "client_id": "33c2a1240ea442b090f88ccec37d46a7",
+    "client_secret": "a8445d44561340f58e416362cc75b498",
+    "redirect_uri": "http://127.0.0.1:8888/callback"
+  }
+}

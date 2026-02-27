@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(where:*)",
+      "Bash(\"C:/Users/J-1/AppData/Local/Programs/Python/Python311/python.exe\" main.py:*)",
+      "Bash(\"C:/Users/J-1/AppData/Local/Programs/Python/Python311/python.exe\" -u main.py)",
+      "Bash(\"C:/Users/J-1/AppData/Local/Programs/Python/Python311/python.exe\" -m pip:*)",
+      "Bash(for:*)",
+      "Bash(do cp:*)",
+      "Bash(done:*)",
+      "Bash(ls:*)",
+      "Bash(pip install -r requirements.txt)",
+      "Bash(py --version:*)",
+      "Bash(scoop list:*)",
+      "Bash(cmd.exe /c \"python --version\":*)",
+      "Bash(cmd.exe /c:*)",
+      "Bash(taskkill:*)",
+      "WebSearch",
+      "WebFetch(domain:moderngl-window.readthedocs.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(do sed:*)",
+      "Bash(git:*)"
+    ]
+  }
+}

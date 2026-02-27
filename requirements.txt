@@ -1,0 +1,6 @@
+sounddevice
+numpy
+moderngl
+moderngl-window
+pygame
+requests
