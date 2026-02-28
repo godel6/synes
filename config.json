@@ -18,7 +18,7 @@
     "bass_divisor": 200,
     "mid_divisor": 50,
     "treble_divisor": 8,
-    "energy_divisor": 2
+    "energy_divisor": 0.3
   },
   "spotify": {
     "enabled": true,

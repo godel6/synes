@@ -11,7 +11,6 @@ uniform float u_energy;
 uniform float u_lyrics;
 uniform float u_palette;
 
-// Hash and noise
 float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
@@ -27,16 +26,6 @@ float noise(vec2 p) {
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
-// Mirror fold for kaleidoscopic effect
-vec3 fold(vec3 p) {
-    vec3 nc = vec3(-0.5, -0.809017, 0.309017);
-    for (int i = 0; i < 5; i++) {
-        p.xy = abs(p.xy);
-        p -= 2.0 * min(0.0, dot(p, nc)) * nc;
-    }
-    return p - vec3(0.0, 0.0, 1.275);
-}
-
 vec3 getNeonColor(float idx) {
     if (idx < 0.5) return vec3(0.0, 1.0, 0.8);
     else if (idx < 1.5) return vec3(1.0, 0.0, 0.5);
@@ -49,57 +38,56 @@ void main() {
     vec2 center = uv - 0.5;
     float dist = length(center);
 
-    float t = u_time * (0.5 + u_bass * 1.5);
+    float t = u_time * (0.3 + u_bass * 0.8);
 
     vec3 neon = getNeonColor(u_palette);
     vec3 neon2 = getNeonColor(u_palette + 1.0);
 
     vec3 color = vec3(0.0);
 
-    // Raymarching setup
-    vec3 ro = vec3(0.0, 0.0, 0.0);
-    vec3 rd = normalize(vec3((uv - 0.5) * 2.0, 1.0));
+    // Kaleidoscopic folding
+    vec2 p = uv * 2.0 - 1.0;
+    p.x *= 1.7;
 
-    // Rotate ray direction
-    float angle = t * 0.1;
-    rd.xy = mat2(cos(angle), sin(angle), -sin(angle), cos(angle)) * rd.xy;
+    for (int i = 0; i < 8; i++) {
+        float fi = float(i);
 
-    float d = 0.0;
-    vec3 p;
+        // Fold space
+        p = abs(p);
+        float angle = fi * 0.785; // 45 degrees
+        float s = sin(angle), c = cos(angle);
+        p = mat2(c, s, -s, c) * p;
 
-    // Raymarch
-    for (int i = 0; i < 60; i++) {
-        p = ro + rd * d;
-        p.xy *= cos(p.z * 0.1) * 0.5;
-        p.z += t;
-        p = fold(p);
+        // Rotate with time
+        p += vec2(sin(t + fi), cos(t * 0.7 + fi)) * 0.3;
 
-        // Cylinder SDF
-        vec2 cp = p.xz;
-        cp.x = abs(cp.x);
-        float cylinderDist = length(cp - vec2(0.75, 0.0)) - 0.5;
-
-        float s = abs(cylinderDist);
+        // Distance pattern
+        float d = length(p);
+        float pattern = sin(d * (10.0 - fi) - t * 2.0);
+        pattern = pow(abs(pattern), 2.0);
 
         // Color accumulation
-        float fade = smoothstep(0.05, 0.0, s);
-        vec3 col = abs(sin(vec3((-p.z * 0.1 - t * 0.4)) * cos(d * 0.01) * 0.5 * sin(vec3(p.xy, 0.0) * (sin(p.z * 0.5) * 0.10) + vec3(0.01, 5.0, 0.0)) * 0.2));
-        color += col * fade * (1.0 - float(i) / 60.0);
-
-        d += s * 0.5;
-        if (s < 0.001 || d > 10.0) break;
+        vec3 layerColor = mix(neon, neon2, fi / 8.0 + sin(t + fi) * 0.2);
+        color += layerColor * pattern * (0.15 - fi * 0.015);
     }
 
-    // Post processing
-    color = (vec3(0.0) - color) * exp(-d * 0.5);
-    color = pow(color, vec3(0.5));
-    color *= 1.0 + u_energy * 0.5;
-
     // Bass pulse
-    color *= 1.0 + u_bass * 0.3;
+    color *= 1.0 + u_bass * 0.5;
 
-    // Vignette
-    float vignette = 1.0 - dist * 0.5;
+    // Mid adds glow
+    float glow = 1.0 / (dist * 3.0 + 0.5);
+    color += neon * glow * u_mid * 0.3;
+
+    // Treble sparkles
+    float sparkle = noise(uv * 80.0 + t * 2.0);
+    sparkle = pow(sparkle, 4.0);
+    color += neon2 * sparkle * u_treble * 0.4;
+
+    // Energy brightness
+    color *= 0.3 + u_energy * 0.7;
+
+    // Vignette (keep dark edges)
+    float vignette = 1.0 - pow(dist, 1.5) * 0.6;
     color *= vignette;
 
     // Lyrics overlay

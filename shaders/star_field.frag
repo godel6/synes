@@ -49,7 +49,7 @@ void main() {
     float dist = length(center);
 
     float t = u_time;
-    float speed = 0.2 + u_bass * 0.5;
+    float speed = 0.15 + u_bass * 0.3;
 
     vec3 neon = getNeonColor(u_palette);
     vec3 neon2 = getNeonColor(u_palette + 1.0);
@@ -57,53 +57,51 @@ void main() {
     vec3 color = vec3(0.0);
 
     // Star field
-    for (int i = 0; i < 80; i++) {
+    for (int i = 0; i < 100; i++) {
         float fi = float(i);
         vec2 starPos = vec2(hash(vec2(fi * 1.23, fi * 0.456)), hash(vec2(fi * 2.789, fi * 1.345)));
 
-        // Move stars
-        starPos.y = fract(starPos.y + t * speed * (0.1 + hash(vec2(fi)) * 0.2));
+        // Animate stars
+        starPos.y = fract(starPos.y + t * speed * (0.1 + hash(vec2(fi)) * 0.15));
 
         float d = length(uv - starPos);
 
-        // Star brightness with twinkle
-        float twinkle = sin(t * 3.0 + fi * 2.0) * 0.5 + 0.5;
+        // Star brightness
         float brightness = hash(vec2(fi * 7.89, fi * 3.21)) * 0.7 + 0.3;
-        brightness *= (0.5 + twinkle * 0.5);
+        float twinkle = sin(t * 2.5 + fi * 3.0) * 0.5 + 0.5;
+        brightness *= (0.4 + twinkle * 0.6);
+        brightness *= 1.0 + u_bass * 0.6;
 
-        // Bass makes stars brighter
-        brightness *= 1.0 + u_bass * 0.8;
-
-        float star = brightness * 0.01 / (d * d + 0.001);
-        star = pow(star, 1.5);
+        float star = brightness * 0.008 / (d * d + 0.0008);
+        star = pow(star, 1.3);
 
         vec3 starColor = mix(neon, neon2, hash(vec2(fi * 0.123, fi)));
-        color += starColor * star * 0.15;
+        color += starColor * star * 0.12;
     }
 
-    // Nebula/clouds background
-    vec2 nebulaUV = uv * 3.0 + vec2(t * 0.05);
+    // Nebula background
+    vec2 nebulaUV = uv * 2.5 + vec2(t * 0.03);
     float nebula = fbm(nebulaUV);
-    nebula = pow(nebula, 2.0);
-    color += neon * nebula * 0.15;
+    nebula = pow(nebula, 2.5);
+    color += neon * nebula * 0.12;
 
-    // Mid adds more nebula detail
-    color += neon2 * fbm(uv * 5.0 - t * 0.1) * u_mid * 0.2;
+    // Mid adds detail
+    color += neon2 * fbm(uv * 4.0 - t * 0.08) * u_mid * 0.15;
 
     // Treble sparkles
-    float sparkle = noise(uv * 50.0 + t * 2.0);
-    sparkle = pow(sparkle, 5.0);
-    color += neon * sparkle * u_treble * 0.3;
+    float sparkle = noise(uv * 40.0 + t * 1.5);
+    sparkle = pow(sparkle, 4.0);
+    color += neon * sparkle * u_treble * 0.25;
 
     // Energy brightness
-    color *= 0.5 + u_energy * 0.6;
+    color *= 0.25 + u_energy * 0.75;
 
     // Center glow
-    float centerGlow = 0.02 / (dist + 0.1);
-    color += neon2 * centerGlow * 0.3;
+    float centerGlow = 0.015 / (dist + 0.08);
+    color += neon2 * centerGlow * 0.25;
 
-    // Vignette
-    float vignette = 1.0 - dist * 0.4;
+    // Vignette (dark edges)
+    float vignette = 1.0 - pow(dist, 1.8) * 0.5;
     color *= vignette;
 
     // Lyrics overlay
