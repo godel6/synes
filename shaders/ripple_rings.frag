@@ -15,17 +15,6 @@ float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 
-float noise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float a = hash(i);
-    float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0));
-    float d = hash(i + vec2(1.0, 1.0));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
-
 vec3 getNeonColor(float idx) {
     if (idx < 0.5) return vec3(0.0, 1.0, 0.8);
     else if (idx < 1.5) return vec3(1.0, 0.0, 0.5);
@@ -40,55 +29,51 @@ void main() {
     float angle = atan(center.y, center.x);
 
     float t = u_time;
-    float speed = 1.0 + u_bass * 2.0;
+    float speed = 0.5 + u_bass * 1.5;
 
     vec3 neon = getNeonColor(u_palette);
     vec3 neon2 = getNeonColor(u_palette + 1.0);
 
     vec3 color = vec3(0.0);
 
-    // Multiple ripple rings
-    for (int i = 0; i < 12; i++) {
+    // Expanding rings from center
+    for (int i = 0; i < 15; i++) {
         float fi = float(i);
 
-        // Ripple position
-        float rippleSpeed = speed * (0.3 + fi * 0.05);
-        float radius = fract(t * rippleSpeed * 0.1 + fi * 0.08);
-        radius = radius * 0.8;
+        // Ring position
+        float ringRadius = fract(t * speed * 0.15 + fi * 0.07);
 
-        // Ring intensity based on audio
-        float ringWidth = 0.02 + u_bass * 0.03;
-        float ring = smoothstep(radius + ringWidth, radius, dist);
-        ring *= smoothstep(radius - ringWidth, radius, dist);
+        // Ring intensity
+        float ringWidth = 0.015 + u_bass * 0.02;
+        float ring = smoothstep(ringRadius + ringWidth, ringRadius, dist);
+        ring *= smoothstep(ringRadius - ringWidth, ringRadius, dist);
 
-        // Pulse
-        float pulse = sin(t * 2.0 + fi) * u_bass * 0.5 + 0.5;
+        // Wave modulation
+        float wave = sin(angle * (4.0 + fi * 0.3) + t + fi) * 0.5 + 0.5;
 
-        // Wave distortion
-        float wave = sin(angle * (3.0 + fi * 0.5) + t + fi * 0.5) * 0.5 + 0.5;
-        wave = pow(wave, 2.0);
+        // Pulse with bass
+        float pulse = sin(t * 2.0 + fi * 0.5) * u_bass * 0.5 + 0.5;
 
-        // Color variation
-        vec3 ringColor = mix(neon, neon2, wave + fi * 0.08);
-
-        color += ringColor * ring * (0.6 - fi * 0.04) * (0.5 + pulse * 0.5);
+        // Color
+        vec3 ringCol = mix(neon, neon2, wave);
+        color += ringCol * ring * (0.5 - fi * 0.03) * (0.4 + pulse * 0.6);
     }
 
-    // Mid adds noise distortion
-    float noiseVal = noise(center * 15.0 + t * speed * 0.2);
-    color += neon * noiseVal * u_mid * 0.2;
+    // Bass glow at center
+    float centerGlow = 0.02 / (dist + 0.05);
+    color += neon * centerGlow * (0.3 + u_bass * 0.4);
 
-    // Treble adds fine detail
-    float detail = noise(center * 40.0 + t * 2.0);
-    detail = pow(detail, 3.0);
-    color += neon2 * detail * u_treble * 0.3;
+    // Mid adds subtle noise
+    float noise = hash(uv * 100.0 + t) * u_mid * 0.1;
+    color += neon2 * noise;
+
+    // Treble sparkles
+    float sparkle = hash(uv * 500.0 + t * 2.0);
+    sparkle = step(0.98, sparkle) * u_treble;
+    color += neon * sparkle * 0.5;
 
     // Energy brightness
-    color *= 0.4 + u_energy * 0.7;
-
-    // Center glow
-    float centerGlow = 0.015 / (dist + 0.05);
-    color += neon * centerGlow * 0.4;
+    color *= 0.4 + u_energy * 0.6;
 
     // Vignette
     float vignette = 1.0 - dist * 0.5;
