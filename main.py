@@ -527,6 +527,15 @@ class AudioVisualizer(mglw.WindowConfig):
                 if 'u_hand_present' in self.program:
                     self.program['u_hand_present'].value = hand_present
 
+                # Debug output every 60 frames
+                if hasattr(self, '_hand_debug_counter'):
+                    self._hand_debug_counter += 1
+                else:
+                    self._hand_debug_counter = 0
+
+                if self._hand_debug_counter % 60 == 0:
+                    print(f"[RENDER] Hand: x={hand_x:.3f}, y={hand_y:.3f}, present={hand_present:.1f}", flush=True)
+
             # Render fullscreen quad
             self.ctx.clear(0, 0, 0, 1)
             self.vao.render(moderngl.TRIANGLE_STRIP)

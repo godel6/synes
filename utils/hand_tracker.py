@@ -20,16 +20,18 @@ class HandTracker:
     Runs detection in a separate thread.
     """
 
-    def __init__(self, camera_index=0, smoothing=0.3):
+    def __init__(self, camera_index=0, smoothing=0.3, debug=True):
         """
         Initialize the hand tracker.
 
         Args:
             camera_index: Index of the camera to use (0 = default webcam)
             smoothing: Smoothing factor for hand position (0.0-1.0, higher = smoother)
+            debug: Enable debug output
         """
         self.camera_index = camera_index
         self.smoothing = smoothing
+        self.debug = debug
 
         # Thread-safe hand data
         self.hand_lock = threading.Lock()
@@ -98,13 +100,21 @@ class HandTracker:
             # Apply smoothing
             with self.hand_lock:
                 # Smooth the position
+                old_x, old_y = self.hand_x, self.hand_y
                 self.hand_x = self.hand_x * self.smoothing + palm.x * (1.0 - self.smoothing)
                 self.hand_y = self.hand_y * self.smoothing + palm.y * (1.0 - self.smoothing)
                 self.hand_present = 1.0
+
+            if self.debug:
+                print(f"[HAND] Detected: x={palm.x:.2f}, y={palm.y:.2f} -> smooth: x={self.hand_x:.2f}, y={self.hand_y:.2f}", flush=True)
         else:
             # No hand detected - apply decay
             with self.hand_lock:
+                was_present = self.hand_present
                 self.hand_present = self.hand_present * 0.9
+
+            if self.debug and was_present > 0.1:
+                print(f"[HAND] Lost - decaying: {self.hand_present:.2f}", flush=True)
 
     def _tracking_loop(self):
         """Main tracking loop - runs in separate thread."""
@@ -164,5 +174,6 @@ def create_hand_tracker(config):
 
     camera_index = hand_config.get("camera_index", 0)
     smoothing = hand_config.get("smoothing", 0.3)
+    debug = hand_config.get("debug", True)
 
-    return HandTracker(camera_index=camera_index, smoothing=smoothing)
+    return HandTracker(camera_index=camera_index, smoothing=smoothing, debug=debug)

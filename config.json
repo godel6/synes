@@ -29,6 +29,7 @@
   "hand_tracking": {
     "enabled": true,
     "camera_index": 0,
-    "smoothing": 0.3
+    "smoothing": 0.3,
+    "debug": true
   }
 }

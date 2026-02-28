@@ -27,7 +27,10 @@
       "Bash(curl:*)",
       "Bash(scoop install:*)",
       "Bash(winget install:*)",
-      "WebFetch(domain:www.shadertoy.com)"
+      "WebFetch(domain:www.shadertoy.com)",
+      "WebFetch(domain:glslsandbox.com)",
+      "Bash(rm:*)",
+      "Bash(do:*)"
     ]
   }
 }
