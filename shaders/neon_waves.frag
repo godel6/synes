@@ -9,6 +9,15 @@ uniform float u_mid;
 uniform float u_treble;
 uniform float u_energy;
 uniform float u_lyrics;
+uniform float u_palette;
+
+// Get palette hue shift
+float getPaletteHue(float idx) {
+    if (idx < 0.5) return 0.7;       // Default purple
+    else if (idx < 1.5) return 0.08;  // Warm orange
+    else if (idx < 2.5) return 0.55;  // Cool blue
+    else return 0.85;                  // Neon pink
+}
 
 // HSV to RGB
 vec3 hsv2rgb(vec3 c) {
@@ -43,7 +52,7 @@ void main() {
     float bassGlow = smoothstep(0.4, 0.0, d) * u_bass * 0.5;
 
     // Mid: hue shift through spectrum
-    float hue = uv.x + u_time * 0.1 + u_mid * 0.5;
+    float hue = getPaletteHue(u_palette) + uv.x * 0.3 + u_time * 0.1 + u_mid * 0.5;
     vec3 neonColor = hsv2rgb(vec3(hue, 1.0, 1.0));
 
     // Treble: scanlines and sparkle
@@ -77,11 +86,15 @@ void main() {
     float horizon = smoothstep(0.3, 0.0, uv.y);
     color += neonColor * horizon * 0.3;
 
+    vec2 center = uv - 0.5;
+    float dist = length(center);
+
+    // Subtle lyrics glow overlay
     if (u_lyrics > 0.5) {
-        float pulse = sin(u_time * 4.0) * 0.5 + 0.5;
-        vec3 warm = vec3(1.0, 0.5, 0.1);
-        color = mix(color, warm, 0.8);
-        color += warm * pulse * 0.5;
+        float pulse = sin(u_time * 2.0) * 0.15 + 0.85;
+        vec3 glow = vec3(1.0, 0.9, 0.7);
+        float edge_glow = smoothstep(0.3, 0.8, dist);
+        color = mix(color, color + glow * 0.3, edge_glow * pulse * 0.4);
     }
     f_color = vec4(color, 1.0);
 }

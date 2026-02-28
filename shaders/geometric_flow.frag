@@ -9,7 +9,15 @@ uniform float u_mid;
 uniform float u_treble;
 uniform float u_energy;
 uniform float u_lyrics;
+uniform float u_palette;
 uniform vec2 u_resolution;
+
+vec3 getPaletteColor(float idx) {
+    if (idx < 0.5) return vec3(0.4, 0.3, 0.8);
+    else if (idx < 1.5) return vec3(0.9, 0.5, 0.2);
+    else if (idx < 2.5) return vec3(0.2, 0.7, 0.8);
+    else return vec3(1.0, 0.3, 0.7);
+}
 
 #define PI 3.14159265359
 
@@ -118,11 +126,12 @@ void main() {
     float vignette = 1.0 - dist * 0.3;
     color *= vignette;
 
+    // Subtle lyrics glow overlay
     if (u_lyrics > 0.5) {
-        float pulse = sin(u_time * 4.0) * 0.5 + 0.5;
-        vec3 warm = vec3(1.0, 0.5, 0.1);
-        color = mix(color, warm, 0.8);
-        color += warm * pulse * 0.5;
+        float pulse = sin(u_time * 2.0) * 0.15 + 0.85;
+        vec3 glow = vec3(1.0, 0.9, 0.7);
+        float edge_glow = smoothstep(0.3, 0.8, dist);
+        color = mix(color, color + glow * 0.3, edge_glow * pulse * 0.4);
     }
     f_color = vec4(color, 1.0);
 }

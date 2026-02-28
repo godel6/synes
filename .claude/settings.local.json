@@ -22,7 +22,11 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(do sed:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(curl:*)",
+      "Bash(scoop install:*)",
+      "Bash(winget install:*)"
     ]
   }
 }

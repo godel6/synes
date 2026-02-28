@@ -9,6 +9,37 @@ uniform float u_mid;
 uniform float u_treble;
 uniform float u_energy;
 uniform float u_lyrics;
+uniform float u_palette;
+
+// Get palette color based on index
+vec3 getPaletteColor(float idx) {
+    if (idx < 0.5) {
+        // Default: purple/cyan/pink
+        return vec3(0.5, 0.2, 0.8);
+    } else if (idx < 1.5) {
+        // Warm: sunset oranges/reds/yellows
+        return vec3(0.9, 0.4, 0.1);
+    } else if (idx < 2.5) {
+        // Cool: ocean blues/teals
+        return vec3(0.1, 0.6, 0.9);
+    } else {
+        // Neon: vibrant pinks/greens
+        return vec3(1.0, 0.2, 0.6);
+    }
+}
+
+// Get secondary palette color
+vec3 getPaletteColor2(float idx) {
+    if (idx < 0.5) {
+        return vec3(0.1, 0.8, 0.9);
+    } else if (idx < 1.5) {
+        return vec3(1.0, 0.7, 0.2);
+    } else if (idx < 2.5) {
+        return vec3(0.2, 0.9, 0.7);
+    } else {
+        return vec3(0.2, 1.0, 0.5);
+    }
+}
 
 // Simplex noise
 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -78,11 +109,11 @@ void main() {
     // Mid: dramatic color palette shifts
     float paletteShift = u_mid;
 
-    // Multiple color palettes
-    vec3 col1 = vec3(0.9, 0.1, 0.2);   // Red
-    vec3 col2 = vec3(0.2, 0.1, 0.9);   // Purple
-    vec3 col3 = vec3(0.1, 0.8, 0.9);   // Cyan
-    vec3 col4 = vec3(0.9, 0.5, 0.1);   // Orange
+    // Use palette colors
+    vec3 col1 = getPaletteColor(u_palette);
+    vec3 col2 = getPaletteColor2(u_palette);
+    vec3 col3 = getPaletteColor(u_palette) * 0.8;
+    vec3 col4 = getPaletteColor2(u_palette) * 0.8;
 
     // Mix based on v and mid
     vec3 color;
@@ -116,11 +147,12 @@ void main() {
     float vignette = 1.0 - dist * 0.5;
     color *= vignette;
 
+    // Subtle lyrics glow overlay
     if (u_lyrics > 0.5) {
-        float pulse = sin(u_time * 4.0) * 0.5 + 0.5;
-        vec3 warm = vec3(1.0, 0.5, 0.1);
-        color = mix(color, warm, 0.8);
-        color += warm * pulse * 0.5;
+        float pulse = sin(u_time * 2.0) * 0.15 + 0.85;
+        vec3 glow = vec3(1.0, 0.9, 0.7);
+        float edge_glow = smoothstep(0.3, 0.8, dist);
+        color = mix(color, color + glow * 0.3, edge_glow * pulse * 0.4);
     }
     f_color = vec4(color, 1.0);
 }

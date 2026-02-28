@@ -9,6 +9,21 @@ uniform float u_mid;
 uniform float u_treble;
 uniform float u_energy;
 uniform float u_lyrics;
+uniform float u_palette;
+
+vec3 getPaletteColor(float idx) {
+    if (idx < 0.5) return vec3(0.2, 0.4, 0.8);
+    else if (idx < 1.5) return vec3(0.9, 0.4, 0.2);
+    else if (idx < 2.5) return vec3(0.2, 0.7, 0.8);
+    else return vec3(0.9, 0.2, 0.6);
+}
+
+vec3 getPaletteColor2(float idx) {
+    if (idx < 0.5) return vec3(0.4, 0.2, 0.6);
+    else if (idx < 1.5) return vec3(1.0, 0.7, 0.3);
+    else if (idx < 2.5) return vec3(0.3, 0.9, 0.7);
+    else return vec3(0.3, 1.0, 0.5);
+}
 
 // Simplex noise function
 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -88,10 +103,12 @@ void main() {
     float glow = 0.8 + u_energy * 0.5;
     color *= glow;
 
-    // Lyrics: subtle golden pulse when lyrics active
+    // Subtle lyrics glow overlay
     if (u_lyrics > 0.5) {
-        float lyricPulse = sin(u_time * 2.0) * 0.5 + 0.5;
-        color += vec3(0.15, 0.1, 0.05) * lyricPulse;
+        float pulse = sin(u_time * 2.0) * 0.15 + 0.85;
+        vec3 glow = vec3(1.0, 0.9, 0.7);
+        float edge_glow = smoothstep(0.3, 0.8, dist);
+        color = mix(color, color + glow * 0.3, edge_glow * pulse * 0.4);
     }
 
     // Vignette

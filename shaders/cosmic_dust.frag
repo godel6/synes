@@ -9,6 +9,32 @@ uniform float u_mid;
 uniform float u_treble;
 uniform float u_energy;
 uniform float u_lyrics;
+uniform float u_palette;
+
+// Get palette color based on index
+vec3 getPaletteColor(float idx) {
+    if (idx < 0.5) {
+        return vec3(0.1, 0.2, 0.5);
+    } else if (idx < 1.5) {
+        return vec3(0.8, 0.3, 0.1);
+    } else if (idx < 2.5) {
+        return vec3(0.1, 0.4, 0.7);
+    } else {
+        return vec3(0.8, 0.2, 0.5);
+    }
+}
+
+vec3 getPaletteColor2(float idx) {
+    if (idx < 0.5) {
+        return vec3(0.5, 0.1, 0.6);
+    } else if (idx < 1.5) {
+        return vec3(1.0, 0.6, 0.2);
+    } else if (idx < 2.5) {
+        return vec3(0.2, 0.8, 0.8);
+    } else {
+        return vec3(0.3, 1.0, 0.5);
+    }
+}
 
 // Hash function for randomness
 float hash(vec2 p) {
@@ -73,10 +99,10 @@ void main() {
     float trails = fbm(p * trailLength);
 
     // Color based on position and mid
-    vec3 color1 = vec3(0.1, 0.2, 0.5);   // Deep blue
-    vec3 color2 = vec3(0.5, 0.1, 0.5);   // Purple
-    vec3 color3 = vec3(0.1, 0.5, 0.5);   // Teal
-    vec3 color4 = vec3(0.8, 0.3, 0.6);   // Pink
+    vec3 color1 = getPaletteColor(u_palette);
+    vec3 color2 = getPaletteColor2(u_palette);
+    vec3 color3 = getPaletteColor(u_palette) * 0.7;
+    vec3 color4 = getPaletteColor2(u_palette) * 0.7;
 
     float colorMix = uv.x + uv.y + u_mid;
     vec3 particleColor = mix(color1, color2, smoothstep(0.0, 0.5, colorMix));
@@ -112,9 +138,12 @@ void main() {
     float vignette = 1.0 - dist * 0.5;
     color *= vignette;
 
-    // Lyrics: warm orange overlay
+    // Subtle lyrics glow overlay
     if (u_lyrics > 0.5) {
-        color = vec3(1.0, 0.5, 0.1);
+        float pulse = sin(u_time * 2.0) * 0.15 + 0.85;
+        vec3 glow = vec3(1.0, 0.9, 0.7);
+        float edge_glow = smoothstep(0.3, 0.8, dist);
+        color = mix(color, color + glow * 0.3, edge_glow * pulse * 0.4);
     }
 
     f_color = vec4(color, 1.0);

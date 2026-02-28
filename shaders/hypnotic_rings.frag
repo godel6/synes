@@ -9,6 +9,14 @@ uniform float u_mid;
 uniform float u_treble;
 uniform float u_energy;
 uniform float u_lyrics;
+uniform float u_palette;
+
+vec3 getPaletteColor(float idx) {
+    if (idx < 0.5) return vec3(0.3, 0.2, 0.7);
+    else if (idx < 1.5) return vec3(0.9, 0.3, 0.1);
+    else if (idx < 2.5) return vec3(0.2, 0.6, 0.9);
+    else return vec3(1.0, 0.2, 0.5);
+}
 
 // HSV to RGB
 vec3 hsv2rgb(vec3 c) {
@@ -74,11 +82,15 @@ void main() {
     float breathe = sin(u_time * 0.5) * 0.1 + 0.9;
     color *= breathe;
 
+    vec2 center = uv - 0.5;
+    float dist = length(center);
+
+    // Subtle lyrics glow overlay
     if (u_lyrics > 0.5) {
-        float pulse = sin(u_time * 4.0) * 0.5 + 0.5;
-        vec3 warm = vec3(1.0, 0.5, 0.1);
-        color = mix(color, warm, 0.8);
-        color += warm * pulse * 0.5;
+        float pulse = sin(u_time * 2.0) * 0.15 + 0.85;
+        vec3 glow = vec3(1.0, 0.9, 0.7);
+        float edge_glow = smoothstep(0.3, 0.8, dist);
+        color = mix(color, color + glow * 0.3, edge_glow * pulse * 0.4);
     }
     f_color = vec4(color, 1.0);
 }

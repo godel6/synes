@@ -43,7 +43,8 @@ class AudioVisualizer(mglw.WindowConfig):
         self.brightness = visuals_config.get("brightness", 1.0)
         self.show_lyrics = visuals_config.get("show_lyrics", False)
         palette_str = visuals_config.get("palette", "default")
-        self.palette_map = {"default": 0, "warm": 1, "cool": 2, "monochrome": 3}
+        self.palette_map = {"default": 0, "warm": 1, "cool": 2, "neon": 3, "mono": 4}
+        self.palette_names = ["default", "warm", "cool", "neon", "mono"]
         self.palette = self.palette_map.get(palette_str, 0)
 
         # Resize to default after window is created
@@ -101,6 +102,7 @@ class AudioVisualizer(mglw.WindowConfig):
         print("  ESC = Exit fullscreen (return to windowed)", flush=True)
         print("  Q or Ctrl+Q = Quit", flush=True)
         print("  LEFT/RIGHT arrows = Cycle shaders", flush=True)
+        print("  UP/DOWN arrows = Cycle color palettes", flush=True)
         print("=" * 50 + "\n", flush=True)
 
         print(f"Found {len(self.available_shaders)} shader(s)", flush=True)
@@ -353,6 +355,16 @@ class AudioVisualizer(mglw.WindowConfig):
                 # Cycle to next shader
                 self.current_shader_idx = (self.current_shader_idx + 1) % len(self.available_shaders)
                 self.load_shader(self.available_shaders[self.current_shader_idx])
+            elif key == keys.UP:
+                # Cycle to next palette
+                self.palette = (self.palette + 1) % 5
+                print(f"Palette: {self.palette_names[self.palette]}", flush=True)
+                self.update_resolution()
+            elif key == keys.DOWN:
+                # Cycle to previous palette
+                self.palette = (self.palette - 1) % 5
+                print(f"Palette: {self.palette_names[self.palette]}", flush=True)
+                self.update_resolution()
 
     def mouse_press_event(self, x, y, button):
         """Handle mouse press - detect double-click for fullscreen"""
