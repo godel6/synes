@@ -4,3 +4,5 @@ moderngl
 moderngl-window
 pygame
 requests
+opencv-python
+mediapipe

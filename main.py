@@ -20,6 +20,7 @@ import pygame
 
 from spotify_client import SpotifyClient
 from utils import shader_downloader
+from utils.hand_tracker import create_hand_tracker
 
 
 class AudioVisualizer(mglw.WindowConfig):
@@ -129,6 +130,12 @@ class AudioVisualizer(mglw.WindowConfig):
         self.spotify.authenticate()
         if self.spotify.is_available():
             self.spotify.start_polling()
+
+        # Initialize hand tracker
+        self.hand_tracker = create_hand_tracker(self.config)
+        if self.hand_tracker:
+            self.hand_tracker.start()
+            print("Hand tracking enabled", flush=True)
 
         # Set initial resolution uniform
         self.update_resolution()
@@ -510,6 +517,16 @@ class AudioVisualizer(mglw.WindowConfig):
             if 'u_palette' in self.program:
                 self.program['u_palette'].value = self.palette
 
+            # Pass hand tracking data if available
+            if hasattr(self, 'hand_tracker') and self.hand_tracker:
+                hand_x, hand_y, hand_present = self.hand_tracker.get_position()
+                if 'u_hand_x' in self.program:
+                    self.program['u_hand_x'].value = hand_x
+                if 'u_hand_y' in self.program:
+                    self.program['u_hand_y'].value = hand_y
+                if 'u_hand_present' in self.program:
+                    self.program['u_hand_present'].value = hand_present
+
             # Render fullscreen quad
             self.ctx.clear(0, 0, 0, 1)
             self.vao.render(moderngl.TRIANGLE_STRIP)
@@ -659,6 +676,8 @@ class AudioVisualizer(mglw.WindowConfig):
                 pass
         if hasattr(self, 'spotify'):
             self.spotify.stop_polling()
+        if hasattr(self, 'hand_tracker') and self.hand_tracker:
+            self.hand_tracker.stop()
         self.wnd.close()
 
 

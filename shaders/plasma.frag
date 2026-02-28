@@ -10,6 +10,9 @@ uniform float u_treble;
 uniform float u_energy;
 uniform float u_lyrics;
 uniform float u_palette;
+uniform float u_hand_x;
+uniform float u_hand_y;
+uniform float u_hand_present;
 
 float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -35,6 +38,16 @@ vec3 getNeonColor(float idx) {
 
 void main() {
     vec2 uv = v_uv;
+
+    // Hand gravity - gentle drift toward hand position
+    // Convert hand coordinates (0-1, with 0,0 at top-left) to UV space
+    vec2 hand_pos = vec2(u_hand_x, 1.0 - u_hand_y); // Flip Y for shader coords
+    vec2 to_hand = hand_pos - uv;
+
+    // Apply gentle gravity - very subtle, like warmth attracting the visuals
+    float gravity_strength = 0.15; // Weak gravity
+    uv += to_hand * u_hand_present * gravity_strength;
+
     vec2 center = uv - 0.5;
     float dist = length(center);
 

@@ -4,3 +4,6 @@ shaders/glsl_*.frag
 shaders/glsl_*.vert
 __pycache__/
 *.pyc
+
+# MediaPipe models
+hand_landmarker.task

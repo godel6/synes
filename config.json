@@ -25,5 +25,10 @@
     "client_id": "33c2a1240ea442b090f88ccec37d46a7",
     "client_secret": "a8445d44561340f58e416362cc75b498",
     "redirect_uri": "http://127.0.0.1:8888/callback"
+  },
+  "hand_tracking": {
+    "enabled": true,
+    "camera_index": 0,
+    "smoothing": 0.3
   }
 }
