@@ -42,14 +42,17 @@ vec3 fractal(vec2 p, float audio) {
         }
     }
 
-    float f = smoothstep(0.015, 0.01, m * 0.5);
+    float f = smoothstep(0.02, 0.005, m * 0.5);  // Smoother falloff
     f *= step(p2.y * 0.5 + p2.x + it * 0.1, 0.0);
 
-    vec3 col = vec3(1.0, 0.0, 0.5);
-    col.rg *= rot(length(p2 + it * 0.5) * 200.0).x;
-    col = normalize(col + 0.5) + step(0.5, fract(p2.y * 100.0));
+    // More vibrant, colorful palette
+    vec3 col = vec3(0.0);
+    float hue = length(p2) * 2.0 + it * 0.2 + t * 0.3;
+    col.r = 0.5 + 0.5 * sin(hue);
+    col.g = 0.5 + 0.5 * sin(hue + 2.094);
+    col.b = 0.5 + 0.5 * sin(hue + 4.188);
 
-    return col * (f * 0.9 + 0.1) * (1.0 + audio * 5.0);
+    return col * (f * 0.8 + 0.1) * (1.0 + audio * 3.0);
 }
 
 vec3 getNeonColor(float idx) {
@@ -77,8 +80,8 @@ void main() {
     // Energy brightness
     color *= 0.5 + u_energy * 0.7;
 
-    // Vignette
-    color *= exp(-1.0 * f);
+    // Dark vignette for edges
+    color *= exp(-1.5 * f);
 
     // Bass pulse
     color *= 1.0 + u_bass * 0.3;

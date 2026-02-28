@@ -56,6 +56,7 @@ The app starts in windowed mode at 1280x720 (configurable in config.json).
 | **ESC** | Exit fullscreen (return to windowed) |
 | **Q** or **Ctrl+Q** | Quit application |
 | **LEFT/RIGHT arrows** | Cycle through shaders |
+| **UP/DOWN arrows** | Cycle through color palettes |
 
 ## Configuration
 
@@ -78,6 +79,21 @@ Edit `config.json` to customize:
 - `blocksize`: Audio buffer size (smaller = faster, larger = more accurate)
 - `visuals.default_width/height`: Default window size
 
+## Available Shaders
+
+The visualizer comes with 8 built-in shaders:
+
+| # | Name | Description |
+|---|------|-------------|
+| 1 | aurora | Flowing northern lights effect |
+| 2 | fractal_zoom | Zooming fractal patterns |
+| 3 | plasma | Colorful flowing plasma |
+| 4 | ripple_rings | Expanding concentric rings |
+| 5 | star_field | Starfield with nebula background |
+| 6 | torus_morph | Morphing torus shapes |
+| 7 | tunnel_fractal | Fractal tunnel |
+| 8 | waves | Ocean wave patterns |
+
 ## Custom Shaders
 
 Add custom shaders to the `shaders/` folder:
@@ -96,7 +112,31 @@ Shaders receive these uniforms:
 | `u_mid` | float | Mid frequency level (0.0-1.0) |
 | `u_treble` | float | Treble level (0.0-1.0) |
 | `u_energy` | float | Overall audio energy (0.0-1.0) |
+| `u_lyrics` | float | 1.0 if lyrics are displaying, 0.0 otherwise |
+| `u_palette` | float | Color palette index (0-3) |
 | `u_resolution` | vec2 | Window size in pixels (optional) |
+
+### Color Palettes
+
+The visualizer supports 4 color palettes:
+
+| Index | Palette | Colors |
+|-------|---------|--------|
+| 0 | Default | Cyan / Pink |
+| 1 | Warm | Orange / Red |
+| 2 | Cool | Blue / Purple |
+| 3 | Neon | Green / Purple |
+
+Use `getNeonColor(u_palette)` helper function in your shader:
+
+```glsl
+vec3 getNeonColor(float idx) {
+    if (idx < 0.5) return vec3(0.0, 1.0, 0.8);  // Cyan
+    else if (idx < 1.5) return vec3(1.0, 0.0, 0.5);  // Pink
+    else if (idx < 2.5) return vec3(0.3, 0.8, 1.0);  // Blue
+    else return vec3(1.0, 0.2, 0.8);  // Purple
+}
+```
 
 ### Example Vertex Shader
 
