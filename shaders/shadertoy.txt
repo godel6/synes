@@ -1,0 +1,678 @@
+// === Global Macros & Helpers ===
+#define T        (iTime * 5.0 )      // Time offset and speed factor
+#define P(z)     vec3(0.0, 0.0, 0.0)       // Ray origin placeholder
+#define rot(a)   mat2(cos(a + vec4(0, 33, 11, 0)))  // 2D rotation matrix using time-based angle
+
+// === Distance Functions ===
+
+// Mirror fold space in tetrahedral symmetry
+// Source: Based on classic kaleidoscopic folding techniques
+vec3 fold(vec3 p) {
+    vec3 nc = vec3(-0.5, -0.809017, 0.309017);  // Normal for folding
+    for (int i = 0; i < 5; i++) {
+        p.xy = abs(p.xy);
+        p -= 2.0 * min(0.0, dot(p, nc)) * nc;
+    }
+    return p - vec3(0.0, 0.0, 1.275);
+}
+
+// Blue Noise for dithering
+// Source: https://www.shadertoy.com/view/3sVXWw
+float BlueNoiseTexAnim(vec2 p) {
+    return textureLod(iChannel0, p / iChannelResolution[0].xy, 0.0)[iFrame & 3];
+}
+
+// Repeating cylinder with rotation and mirroring
+// Inspired by: custom implementation
+float cylinder(vec3 p, float spacing) {
+    // Repeat along Z with wobble
+    p.xy *= cos(p.z*2.+iTime*.2) * 0.5 * mat2(cos(spacing - vec4(0, 3, 2.0, 0.1)));
+    p.z = mod(p.z - .50 * spacing, spacing) - 0.5 * spacing;
+
+    // Mirror symmetry in Y
+    p.x = abs(p.x); //Optional Intertwined look
+
+    // Distance to cylinder in XZ plane
+    return length(p.xz - vec2(.75, 0.0)) - 0.5;
+}
+
+vec3 reinhardHC(vec3 color, float exposure, float contrast, float gamma) {
+    // Apply exposure
+    color *= exposure;
+
+    // Reinhard compression
+    color = color / (1.0 + color);
+
+    // Contrast curve (S-curve)
+    color = pow(color, vec3(contrast));
+
+    // Final gamma correction
+    color = pow(color, vec3(1.0 / gamma));
+
+    return clamp(color, 0.0, 1.0);
+}
+
+
+// === Main Render Function ===
+void mainImage(out vec4 fragColor, in vec2 u) {
+    float s = 1.;    // Step size max
+    float d = 0.0;      // Total distance traveled along ray
+    float i = 0.0;      // Iteration count
+
+    vec3 r = iResolution;
+    vec3 ro = P(T);     // Ray origin
+    vec3 p = ro;
+
+    // Ray direction from screen coordinates
+    vec3 D = vec3((u - r.xy * 0.5) / r.y, 1.0) * 0.5;
+
+    vec4 o = vec4(0.0); // Accumulated color
+
+    // === Raymarching Loop ===
+    for (; i++ < 500.0 && s > 0.00099;) {
+        p = ro + D * d;
+         
+        // Spatial distortion along Z
+        p.xy *= rot(p.z * 0.1);
+
+        // Translate along Z with time
+        p.z += T;
+
+        // Mirror fold the space
+        p = fold(p) + vec3(1.0+sin(T*.05));
+        
+        // Scene SDF (just cylinder for now)
+        float sceneDist = cylinder(p.xyz, 1.5);
+        //s = round(s * 50.0) / 50.0;
+        s = abs(sceneDist);
+       
+
+
+        d += s;
+        
+        // Soft fade-in contribution based on proximity
+        float fade = smoothstep(0.05, 0.000, s);
+
+        // Procedural coloring using cosine & sine mix
+        vec3 col = abs(sin((-p.z*.1-iTime*.4)))*cos(d * .01 )*.5 * sin(vec3(p.xy,0.)*(sin(p.z*.5)*.10) +vec3(.01, 5.+sin(p.y*p.x*2.+10.)*1.+-9., .0)) * 0.2 - 0.;
+
+        // Accumulate color
+        o.rgb += col * fade;
+        
+    }
+
+    // === Post-Processing ===
+
+    // Fog/falloff based on depth
+    o.rgb = (0.0 - o.rgb) * exp(-d / 50.0);
+
+    // Boost brightness
+    o.rgb *= o.rgb;
+    o.rgb = reinhardHC(o.rgb, 3., 1.99, 2.2);
+
+    // Blue noise dithering
+    float dither = BlueNoiseTexAnim(u) - 0.5;       // Map to [-0.5, 0.5]
+    float quantum = 1.0 / 255.0;                    // 8-bit quantization step
+    o.rgb += dither * quantum;                     // Apply dithering
+
+    fragColor = vec4(o.rgb, 1.0);
+}
+
+>>>> 2
+#define eps 0.005
+#define far 40.
+#define time iTime*.25
+#define PI 3.1415926
+
+#define PSD pow(abs(textureLod(iChannel0, vec2(.5), 0.).r), 2.)
+
+// Variants
+//#define rings
+//#define polar
+//#define warp
+
+//#define audio
+
+vec2 rotate(vec2 p, float a)
+{
+    float t = atan(p.y, p.x)+a;
+    float l = length(p);
+    return vec2(l*cos(t), l*sin(t));
+}
+
+float sdTorus( vec3 p, vec2 t )
+{
+  vec2 q = vec2(length(p.xz)-t.x,p.y);
+  return length(q)-t.y;
+}
+
+vec3 tri(in vec3 x){return abs(x-floor(x)-.5);} // Triangle function.
+
+float distort(vec3 p)
+{
+    //return sin(p.x + sin(p.y + time * .1) + sin(p.z)*p.z + p.x + p.y + time);
+    return dot(tri(p+time) + sin(tri(p+time)), vec3(.666));
+}
+
+float trap;
+
+float map(vec3 p)
+{
+    p.z += .2;
+    p += distort(p*distort(p))*.1;
+    #ifdef audio
+    trap = dot(sin(p), 1.-abs(p-PSD))*1.2;
+    #else
+    trap = dot(sin(p), 1.-abs(p))*1.2;
+    #endif
+    float d = -sdTorus(p, vec2(1., .7)) + distort(p)*.05;
+    
+    #ifdef rings
+    p.y -= .2;
+    for(int i = 0; i < 3; i++)
+    {
+        p.y += float(i)*.1;
+        
+    	d = min(d, sdTorus(p, vec2(.75, .01))-distort(p*float(i))*.01);
+    }
+    #endif
+    
+    return d;
+}
+
+vec3 calcNormal(vec3 p)
+{
+    vec2 e = vec2(eps, 0);
+    return normalize(vec3(
+        map(p+e.xyy)-map(p-e.xyy),
+        map(p+e.yxy)-map(p-e.yxy),
+        map(p+e.yyx)-map(p-e.yyx)
+        ));
+}
+
+float trace(vec3 r, vec3 d, float start)
+{
+    float m, t=start;
+    for (int i = 0; i < 100; i++)
+    {
+        m = map(r + d * t);
+        t += m;
+        if (m < eps || t > far) break;
+    }
+    return t;
+}
+
+void mainImage( out vec4 f, in vec2 g )
+{
+	vec2 R=iResolution.xy, u = (g+g-R)/R.y;
+    
+    #ifdef audio
+    u *= sin(PSD*5.);
+    #endif
+    
+    #ifdef polar
+    u = rotate(u, 2.*atan(u.y, u.x) + time);
+    #endif
+    
+    #ifdef warp
+    u = abs(u)/dot(u, u) - vec2(step(1., time));
+    #endif
+    
+    vec3 r = vec3(0, 0, 1), d = normalize(vec3(u, -1)), p, n, col;
+    col = vec3(0.);
+    float t = trace(r, d, 0.);
+    p = r + d * t;
+    
+    n = calcNormal(p);
+    
+    if (t < far)
+    {
+        vec3 objcol = vec3(trap/abs(1.-trap), trap*trap, 1.-trap);
+        vec3 lp = vec3(1, 3, 3);
+        vec3 ld = lp - p;
+        float len = length(ld);
+        float atten = max(0., 1./(len*len));
+        ld /= len;
+        float amb = .25;
+        float diff = max(0., dot(ld, n));
+        float spec = pow(max(0., dot(reflect(-ld, n), r)), 8.);
+        float ref = trace(r, reflect(d, n), eps*5.);
+        col = objcol * (((diff*.8+amb*.8)+.1*spec)+atten*.1)*ref;
+    }
+    
+    f = vec4(col, 1);
+}
+
+>>>> 3 
+
+
+float sun(vec2 uv, float battery)
+{
+ 	float val = smoothstep(0.3, 0.29, length(uv));
+	val = val - 0.4f + pow(texture(iChannel0, vec2(0.1, .25)).r, 1.0f) * 1.0f;
+ 	float bloom = smoothstep(0.7, 0.0, length(uv));
+    float cut = 3.0 * sin((uv.y + iTime * 0.2 * (battery + 0.02)) * 100.0) 
+				+ clamp(uv.y * 14.0 + 1.0, -6.0, 6.0);
+    cut = clamp(cut, 0.0, 1.0);
+    return clamp(val * cut, 0.0, 1.0) + bloom * 0.6;
+}
+
+float grid(vec2 uv, float battery)
+{
+    vec2 size = vec2(uv.y, uv.y * uv.y * 0.2) * 0.01;
+    uv += vec2(0.0, iTime * 4.0 * (battery + 0.05));
+    uv = abs(fract(uv) - 0.7f + pow(texture(iChannel0, vec2(0.1, .25)).r, 0.7f) * 1.0f );
+ 	vec2 lines = smoothstep(size, vec2(0.0), uv);
+ 	lines += smoothstep(size * 5.0, vec2(0.0), uv) * 0.4 * battery;
+    return clamp(lines.x + lines.y, 0.0, 3.0);
+}
+
+float dot2(in vec2 v ) { return dot(v,v); }
+
+float sdTrapezoid( in vec2 p, in float r1, float r2, float he )
+{
+    vec2 k1 = vec2(r2,he);
+    vec2 k2 = vec2(r2-r1,2.0*he);
+    p.x = abs(p.x);
+    vec2 ca = vec2(p.x-min(p.x,(p.y<0.0)?r1:r2), abs(p.y)-he);
+    vec2 cb = p - k1 + k2*clamp( dot(k1-p,k2)/dot2(k2), 0.0, 1.0 );
+    float s = (cb.x<0.0 && ca.y<0.0) ? -1.0 : 1.0;
+    return s*sqrt( min(dot2(ca),dot2(cb)) );
+}
+
+float sdLine( in vec2 p, in vec2 a, in vec2 b )
+{
+    vec2 pa = p-a, ba = b-a;
+    float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
+    return length( pa - ba*h );
+}
+
+float sdBox( in vec2 p, in vec2 b )
+{
+    vec2 d = abs(p)-b;
+    return length(max(d,vec2(0))) + min(max(d.x,d.y),0.0);
+}
+
+float opSmoothUnion(float d1, float d2, float k){
+	float h = clamp(0.5 + 0.5 * (d2 - d1) /k,0.0,1.0);
+    return mix(d2, d1 , h) - k * h * ( 1.0 - h);
+}
+
+float sdCloud(in vec2 p, in vec2 a1, in vec2 b1, in vec2 a2, in vec2 b2, float w)
+{
+	//float lineVal1 = smoothstep(w - 0.0001, w, sdLine(p, a1, b1));
+    float lineVal1 = sdLine(p, a1, b1);
+    float lineVal2 = sdLine(p, a2, b2);
+    vec2 ww = vec2(w*1.5, 0.0);
+    vec2 left = max(a1 + ww, a2 + ww);
+    vec2 right = min(b1 - ww, b2 - ww);
+    vec2 boxCenter = (left + right) * 0.5;
+    //float boxW = right.x - left.x;
+    float boxH = abs(a2.y - a1.y) * 0.5;
+    //float boxVal = sdBox(p - boxCenter, vec2(boxW, boxH)) + w;
+    float boxVal = sdBox(p - boxCenter, vec2(0.04, boxH)) + w;
+    
+    float uniVal1 = opSmoothUnion(lineVal1, boxVal, 0.05);
+    float uniVal2 = opSmoothUnion(lineVal2, boxVal, 0.05);
+    
+    return min(uniVal1, uniVal2);
+}
+
+void mainImage( out vec4 fragColor, in vec2 fragCoord )
+{
+    vec2 uv = (2.0 * fragCoord.xy - iResolution.xy)/iResolution.y;
+    float battery = 1.0;
+    //if (iMouse.x > 1.0 && iMouse.y > 1.0) battery = iMouse.y / iResolution.y;
+    //else battery = 0.8;
+    
+    //if (abs(uv.x) < (9.0 / 16.0))
+    {
+        // Grid
+        float fog = smoothstep(0.1, -0.02, abs(uv.y + 0.2));
+        vec3 col = vec3(0.0, 0.1, 0.2);
+        if (uv.y < -0.2)
+        {
+            uv.y = 3.0 / (abs(uv.y + 0.2) + 0.05);
+            uv.x *= uv.y * 1.0;
+            float gridVal = grid(uv, battery);
+            col = mix(col, vec3(1.0, 0.5, 1.0), gridVal);
+        }
+        else
+        {
+            float fujiD = min(uv.y * 4.5 - 0.5, 1.0);
+            uv.y -= battery * 1.1 - 0.51;
+            
+            vec2 sunUV = uv;
+            vec2 fujiUV = uv;
+            
+            // Sun
+            sunUV += vec2(0.75, 0.2);
+            //uv.y -= 1.1 - 0.51;
+            col = vec3(1.0, 0.2, 1.0);
+            float sunVal = sun(sunUV, battery);
+            
+            col = mix(col, vec3(1.0, 0.4, 0.1), sunUV.y * 2.0 + 0.2);
+            col = mix(vec3(0.0, 0.0, 0.0), col, sunVal);
+            
+            // fuji
+            float fujiVal = sdTrapezoid( uv  + vec2(-0.75+sunUV.y * 0.0, 0.5), 1.75 + pow(texture(iChannel0, vec2(0.1, .25)).r, 2.1), 0.2, 0.5);
+            float waveVal = uv.y + sin(uv.x * 20.0 + iTime * 2.0) * 0.05 + 0.2;
+            float wave_width = smoothstep(0.0,0.01,(waveVal));
+            
+            // fuji color
+            col = mix( col, mix(vec3(0.0, 0.0, 0.25), vec3(1.0, 0.0, 0.5), fujiD), step(fujiVal, 0.0));
+            // fuji top snow
+            col = mix( col, vec3(1.0, 0.5, 1.0), wave_width * step(fujiVal, 0.0));
+            // fuji outline
+            col = mix( col, vec3(1.0, 0.5, 1.0), 1.0-smoothstep(0.0,0.01,abs(fujiVal)) );
+            //col = mix( col, vec3(1.0, 1.0, 1.0), 1.0-smoothstep(0.03,0.04,abs(fujiVal)) );
+            //col = vec3(1.0, 1.0, 1.0) *(1.0-smoothstep(0.03,0.04,abs(fujiVal)));
+            
+            // horizon color
+            col += mix( col, mix(vec3(1.0, 0.12, 0.8), vec3(0.0, 0.0, 0.2), clamp(uv.y * 3.5 + 3.0, 0.0, 1.0)), step(0.0, fujiVal) );
+            
+            // cloud
+            vec2 cloudUV = uv;
+            cloudUV.x = mod(cloudUV.x + iTime * 0.1, 4.0) - 2.0;
+            float cloudTime = iTime * 0.5;
+            float cloudY = -0.9   + pow(texture(iChannel0, vec2(0.1, .35)).r, 0.7f);
+            float cloudVal1 = sdCloud(cloudUV, 
+                                     vec2(0.1 + sin(cloudTime + 140.5)*0.1,cloudY), 
+                                     vec2(1.05 + cos(cloudTime * 0.9 - 36.56) * 0.1, cloudY), 
+                                     vec2(0.2 + cos(cloudTime * 0.867 + 387.165) * 0.1,0.25+cloudY), 
+                                     vec2(0.5 + cos(cloudTime * 0.9675 - 15.162) * 0.09, 0.25+cloudY), 0.075);
+            cloudY = -1.  + pow(texture(iChannel0, vec2(0.1, .25)).r, 0.7f);
+            float cloudVal2 = sdCloud(cloudUV, 
+                                     vec2(-0.9 + cos(cloudTime * 1.02 + 541.75) * 0.1,cloudY), 
+                                     vec2(-0.5 + sin(cloudTime * 0.9 - 316.56) * 0.1, cloudY), 
+                                     vec2(-1.5 + cos(cloudTime * 0.867 + 37.165) * 0.1,0.25+cloudY), 
+                                     vec2(-0.6 + sin(cloudTime * 0.9675 + 665.162) * 0.09, 0.25+cloudY), 0.075);
+            
+            float cloudVal = min(cloudVal1, cloudVal2);
+            
+            
+            //col = mix(col, vec3(1.0,1.0,0.0), smoothstep(0.0751, 0.075, cloudVal));
+            col = mix(col, vec3(0.0, 0.0, 0.2), 1.0 - smoothstep(0.075 - 0.0001, 0.075, cloudVal));
+            col += vec3(1.0, 1.0, 1.0)*(1.0 - smoothstep(0.0,0.01,abs(cloudVal - 0.075)));
+        }
+
+        col += fog * fog * fog;
+        col = mix(vec3(col.r, col.r, col.r) * 0.5, col, battery * 0.7);
+
+        fragColor = vec4(col,1.0);
+    }
+    //else fragColor = vec4(0.0);
+
+    
+}
+
+
+>>>> 4
+
+const int iters = 150;
+
+int fractal(vec2 p, vec2 point) {
+	vec2 so = (-1.0 + 2.0 * point) * 0.4;
+	vec2 seed = vec2(0.098386255 + so.x, 0.6387662 + so.y);
+	
+	for (int i = 0; i < iters; i++) {
+		
+		if (length(p) > 2.0) {
+			return i;
+		}
+		vec2 r = p;
+		p = vec2(p.x * p.x - p.y * p.y, 2.0* p.x * p.y);
+		p = vec2(p.x * r.x - p.y * r.y + seed.x, r.x * p.y + p.x * r.y + seed.y);
+	}
+	
+	return 0;	
+}
+
+vec3 color(int i) {
+	float f = float(i)/float(iters) * 2.0;
+	f=f*f*2.;
+	return vec3((sin(f*2.0)), (sin(f*3.0)), abs(sin(f*7.0)));
+}
+
+
+float sampleMusicA() {
+	return 0.5 * (
+		texture( iChannel0, vec2( 0.15, 0.25 ) ).x + 
+		texture( iChannel0, vec2( 0.30, 0.25 ) ).x);
+}
+
+void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+	vec2 uv = fragCoord.xy / iResolution.xy;
+    vec2 mouse = vec2(iMouse.x/iResolution.x,iMouse.y/iResolution.y);
+    
+    vec2 position = 3. * (-0.5 + fragCoord.xy / iResolution.xy );
+	position.x *= iResolution.x/iResolution.y;
+    
+    vec2 iFC = vec2(iResolution.x-fragCoord.x,iResolution.y-fragCoord.y);    
+    vec2 pos2 = 2. * (-0.5 + iFC.xy / iResolution.xy);
+    pos2.x*=iResolution.x/iResolution.y;
+    
+    vec4 t3 = texture(iChannel0, vec2(length(position)/2.0,0.1) );
+    float pulse = 0.5+sampleMusicA()*1.8;
+
+    vec3 invFract = color(fractal(pos2,vec2(0.55+sin(iTime/3.+0.5)/2.0,pulse*.9)));
+    
+    vec3 fract4 = color(fractal(position/1.6,vec2(0.6+cos(iTime/2.+0.5)/2.0,pulse*.8)));
+
+    vec3 c = color(fractal(position,vec2(0.5+sin(iTime/3.)/2.0,pulse)));
+    
+    t3=abs(vec4(0.5,0.1,0.5,1.)-t3)*2.;
+    
+    vec4 fract01 =  vec4( c , 1.0 );
+    vec4 salida;
+    salida = fract01 / t3 + fract01 * t3 + vec4(invFract,0.6) + vec4(fract4,0.3);
+	fragColor = salida;
+}
+
+
+>>>>5
+#define so texture(iChannel0,vec2(.5,.3)).r
+
+mat2 rot(float a) {
+    a=radians(a);
+    float s=sin(a), c=cos(a);
+    return mat2(c,s,-s,c);
+}
+
+
+vec3 fractal(vec2 p) {
+    float a=smoothstep(-.1,.1,sin(iTime*.5));
+    p*=rot(90.*a);  
+    vec2 p2=p;
+    p*=.5+asin(.9*sin(iTime*.2))*.3;
+    p.y-=a;
+    p.x+=iTime*.3+so*.1;
+    p=fract(p*.5);
+    float m=1000.;
+    float it=0.;
+    for (int i=0; i<10; i++) {
+        p=abs(p)/clamp(abs(p.x*p.y),.25,2.)-1.;
+        float l=abs(p.x);
+        m=min(m,l);
+        if (m==l) {
+            it=float(i);
+        }
+
+    }
+    float f=smoothstep(.015,.01,m*.5);
+    f*=step(p2.y*.5+p2.x+it*.1-.3,.0);
+    vec3 col=normalize(vec3(1.,.0,.5));
+    col.rg*=rot(length(p2+it*.5)*200.);
+    col=normalize(col+.5)+step(.5,fract(p2.y*100.));
+    return col*(f*.9+.1)*(1.+so*5.);
+}
+
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord)
+{
+    vec2 uv = fragCoord / iResolution.xy - .5;
+    uv.x*=iResolution.x/iResolution.y;
+    uv*=1.+so*.5;
+
+    int aa = 5; 
+    float f=max(abs(uv.x),abs(uv.y));
+    vec2 pixelSize = 10. / iResolution.xy / float(aa) * f;
+    vec3 col = vec3(0.0); 
+
+    for (int i = -aa; i <= aa; i++)
+    {
+        for (int j = -aa; j <= aa; j++)
+        {
+            vec2 offset = vec2(float(i), float(j)) * pixelSize;
+            col += fractal(uv + offset); 
+        }
+    }
+
+    float totalSamples = float((aa * 2 + 1) * (aa * 2 + 1)); 
+    col /= totalSamples;
+    col*=exp(-1.*f);
+
+    fragColor = vec4(col, 1.0);
+}
+
+
+
+>>>>6 
+
+/////////////////////////////////////////////////////////////////////////////////
+// Modified from relampago2048's "Fractal Audio 01"
+// https://www.shadertoy.com/view/llB3W1
+/////////////////////////////////////////////////////////////////////////////////
+
+const int iters = 150;
+
+int fractal(vec2 p, vec2 point) {
+	vec2 so = (-1.0 + 2.0 * point) * 0.3;
+	vec2 seed = vec2(0.098386255 + so.x, 0.6387662 + so.y);
+	
+	for (int i = 0; i < iters; i++) {
+		
+		if (length(p) > 2.0) {
+			return i;
+		}
+		vec2 r = p;
+		p = vec2(p.x * p.x - p.y * p.y, 2.0* p.x * p.y);
+		p = vec2(p.x * r.x - p.y * r.y + seed.x, r.x * p.y + p.x * r.y + seed.y);
+	}
+	
+	return 0;	
+}
+
+vec3 color(int i) {
+	float f = float(i)/float(iters) * 2.0;
+	f=f*f*2.;
+	return vec3((sin(f*2.0)), (sin(f*3.0)), abs(sin(f*7.0)));
+}
+
+
+float sampleMusicA() {
+	return 0.6 * (
+		texture( iChannel1, vec2( 0.15, 0.25 ) ).x + 
+		texture( iChannel1, vec2( 0.30, 0.25 ) ).x);
+}
+
+mat2 rotateX(float rad) {
+    float c = cos(rad);
+    float s = sin(rad);
+    return mat2(
+        c, -s,
+        s, c
+    );
+}
+
+vec4 fractalImg(vec2 uv, vec2 fragCoord) {    
+    vec2 position = 3. * (-0.5 + fragCoord.xy / iResolution.xy ) + vec2(0.2 * abs(cos(iTime * 0.21313)) * sin(sin(iTime)+cos(iTime)*.242), 0.1 * abs(cos(iTime * 0.1323)));
+	position.x *= iResolution.x/iResolution.y;
+    position *= rotateX(mod(iTime * .54, 6.3) + abs(.2 * sin(iTime / 5.3)));
+    
+    vec2 iFC = vec2(iResolution.x-fragCoord.x,iResolution.y-fragCoord.y);    
+    vec2 pos2 = 2. * (-0.5 + iFC.xy / iResolution.xy);
+    pos2.x*=iResolution.x/iResolution.y;
+    pos2 *= rotateX(mod(iTime * -.4235, 6.3) + abs(.2 * sin(iTime / 5.3)));
+
+    vec4 t3 = texture(iChannel0, vec2(length(position)/14.0,0.1) );
+    float pulse = .2+sampleMusicA()*1.8;
+
+    vec3 invFract = color(fractal(pos2,vec2(0.55+sin(iTime/18.+0.5)/2.0,pulse*.9)));
+    
+    vec3 fract4 = color(fractal(position/1.6,vec2(0.6+cos(iTime/20.+0.5)/2.0,pulse*.8)));
+
+    vec3 c = color(fractal(position,vec2(10.1+sin(iTime/3.)/12.0,pulse)));
+    
+    t3=abs(vec4(0.5,0.1,0.5,1.)-t3)*.8;
+    
+    vec4 fract01 =  vec4( c , 1.0 );
+    vec4 salida;
+    salida = fract01 / t3 + fract01 * t3 + vec4(invFract,0.6) + vec4(fract4,0.25);
+	return mix(salida * 2.,texture(iChannel1, fragCoord.xy / iResolution.xy), 0.3);
+}
+
+/////////////////////////////////////////////////////////////////////////////////
+// Modified from t3hk0d3's "webcam roberts"
+// https://www.shadertoy.com/view/MssGRB
+/////////////////////////////////////////////////////////////////////////////////
+
+
+const float sensitivity = 1.0 / 64.0;
+
+float bw(vec2 coords) {
+	vec4 lm = texture(iChannel0, coords) * vec4(0.21, 0.71, 0.07, 1);
+	
+	return lm.r+lm.g+lm.b;	
+}
+
+float outline(vec2 uv)
+{
+ 	vec2 of = vec2(sensitivity * pow(sampleMusicA(), 2.), 0);
+	
+	return sqrt(
+		pow(abs(bw(uv) - bw(uv+of.xx)), 2.0) +
+		pow(abs(bw(uv + of.xy) - bw(uv + of.yx)), 2.0)
+	);   
+}
+
+/////////////////////////////////////////////////////////////////////////////////
+// Modified from  unycone's "Camera Distortion 01"
+// https://www.shadertoy.com/view/XlXfRs
+/////////////////////////////////////////////////////////////////////////////////
+
+vec2 distort(vec2 uv)
+{
+    bool autoScale = true;
+    float strength = sampleMusicA() * sign(sin(iTime / 5.)) * 0.1;
+    float zoom = (autoScale ? abs(strength) + 1.0 : 1.0);
+    
+
+    
+    vec2 p = (uv - 0.5) * 2.0; // map [0, 1] to [-1, 1]
+    float theta = atan(p.y, p.x);
+    float rd = length(p);
+    float ru = rd * (1.0 + strength * rd * rd) / zoom;
+    return vec2(cos(theta), sin(theta)) * ru / 2.0 + 0.5; 
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////
+void mainImage( out vec4 fragColor, in vec2 fragCoord )
+{
+    vec2 uv = fragCoord.xy / iResolution.xy;
+    uv.x = 1.0 - uv.x;
+    
+    vec4 imgColor = texture(iChannel0, uv);
+
+
+	//uv = distort(uv); // Comment this line out to remove distortion
+	
+	float bwColor = outline(uv) * 2.;
+    bwColor = min(round(bwColor * 8.), 2.) * bwColor;
+    
+	
+	
+	fragColor.xyz = bwColor * (fractalImg(uv, fragCoord) + fractalImg(-uv, fragCoord)).xyz;
+}
+
