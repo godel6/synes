@@ -19,6 +19,7 @@ from moderngl_window.text.bitmapped import TextWriter2D
 import pygame
 
 from spotify_client import SpotifyClient
+from utils import shader_downloader
 
 
 class AudioVisualizer(mglw.WindowConfig):
@@ -103,6 +104,8 @@ class AudioVisualizer(mglw.WindowConfig):
         print("  Q or Ctrl+Q = Quit", flush=True)
         print("  LEFT/RIGHT arrows = Cycle shaders", flush=True)
         print("  UP/DOWN arrows = Cycle color palettes", flush=True)
+        print("  B = Browse shaders from glslsandbox.com", flush=True)
+        print("  D = Download a shader from glslsandbox.com", flush=True)
         print("=" * 50 + "\n", flush=True)
 
         print(f"Found {len(self.available_shaders)} shader(s)", flush=True)
@@ -257,6 +260,56 @@ class AudioVisualizer(mglw.WindowConfig):
         self.update_resolution()
         return super().resize(width, height)
 
+    def browse_shaders(self):
+        """Browse available shaders from glslsandbox.com"""
+        print("\n" + "=" * 50, flush=True)
+        print("GLSL Sandbox Shader Browser", flush=True)
+        print("=" * 50, flush=True)
+
+        # Fetch shader list from gallery
+        shaders = shader_downloader.fetch_shader_list()
+        if shaders:
+            print(f"Found {len(shaders)} shaders in gallery", flush=True)
+            print("First 10 shader IDs:", flush=True)
+            for i, (sid, url) in enumerate(shaders[:10], 1):
+                print(f"  {i}. {sid}: {url}", flush=True)
+        else:
+            # Fallback to example IDs
+            examples = shader_downloader.get_example_shader_ids()
+            print("Example shader IDs:", flush=True)
+            for i, sid in enumerate(examples, 1):
+                print(f"  {i}. {sid}", flush=True)
+
+        print("\nTo download a shader:", flush=True)
+        print("  1. Press D to download shader ID 109691", flush=True)
+        print("  2. Or use Python console:", flush=True)
+        print("     >>> import shader_downloader", flush=True)
+        print("     >>> shader_downloader.download_and_save('SHADER_ID', 'shaders')", flush=True)
+        print("=" * 50 + "\n", flush=True)
+
+    def download_shader_interactive(self):
+        """Download a shader from glslsandbox.com interactively"""
+        print("\n" + "=" * 50, flush=True)
+        print("Download Shader from glslsandbox.com", flush=True)
+        print("=" * 50, flush=True)
+
+        # Download an example shader
+        shader_id = "109691"  # Good demo shader
+        print(f"Downloading shader ID '{shader_id}'...", flush=True)
+
+        frag_path = shader_downloader.download_and_save(shader_id, "shaders")
+
+        if frag_path:
+            print(f"Successfully downloaded: {frag_path.name}", flush=True)
+            # Reload shaders
+            self.available_shaders = self.load_shaders()
+            print(f"Total shaders now: {len(self.available_shaders)}", flush=True)
+            print("Use LEFT/RIGHT to find and select the new shader", flush=True)
+        else:
+            print("Failed to download shader", flush=True)
+
+        print("=" * 50 + "\n", flush=True)
+
     def start_audio(self):
         """Start audio capture in background thread"""
         try:
@@ -365,6 +418,12 @@ class AudioVisualizer(mglw.WindowConfig):
                 self.palette = (self.palette - 1) % 5
                 print(f"Palette: {self.palette_names[self.palette]}", flush=True)
                 self.update_resolution()
+            elif key == keys.B:
+                # Browse shaders - show available shaders from glslsandbox.com
+                self.browse_shaders()
+            elif key == keys.D:
+                # Download shader from glslsandbox.com
+                self.download_shader_interactive()
 
     def mouse_press_event(self, x, y, button):
         """Handle mouse press - detect double-click for fullscreen"""

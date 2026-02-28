@@ -1,2 +1,6 @@
 # Spotify tokens (generated on first OAuth)
 .spotify_tokens.json
+shaders/glsl_*.frag
+shaders/glsl_*.vert
+__pycache__/
+*.pyc
