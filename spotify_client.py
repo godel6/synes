@@ -24,7 +24,7 @@ class SpotifyClient:
     API_BASE = "https://api.spotify.com/v1"
     LRCLIB_URL = "https://lrclib.net/api/get"
 
-    SCOPES = ["user-read-currently-playing"]
+    SCOPES = ["user-read-currently-playing", "user-read-playback-state"]
 
     def __init__(self, config):
         """Initialize with Spotify configuration."""
@@ -64,6 +64,11 @@ class SpotifyClient:
         self.track_loudness = -10  # dB
         self.track_valence = 0.5  # 0-1 mood (sad to happy)
         self.track_danceability = 0.5  # 0-1
+
+        # Audio analysis data (segment-level loudness for real-time reactivity)
+        self._audio_analysis = None  # Full analysis response
+        self._segments = []  # List of segment dicts with loudness data
+        self._beats = []  # List of beat start times
 
         # Derived audio values for shaders
         self.spotify_bass = 0.0
@@ -352,6 +357,13 @@ class SpotifyClient:
                 args=(self.current_track_id,),
                 daemon=True
             ).start()
+
+            # Fetch detailed audio analysis for real-time segment loudness
+            threading.Thread(
+                target=self._fetch_audio_analysis,
+                args=(self.current_track_id,),
+                daemon=True
+            ).start()
         else:
             # Same track, just update progress and playing state
             self.is_playing = track_info["is_playing"]
@@ -466,6 +478,47 @@ class SpotifyClient:
         except Exception:
             pass
 
+    def _fetch_audio_analysis(self, track_id):
+        """Fetch detailed audio analysis with segment-level loudness data."""
+        if not track_id:
+            return
+
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+
+        try:
+            response = requests.get(
+                f"{self.API_BASE}/audio-analysis/{track_id}",
+                headers=headers,
+                timeout=15
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                self._audio_analysis = data
+
+                # Extract segments with loudness data
+                self._segments = []
+                for seg in data.get("segments", []):
+                    self._segments.append({
+                        "start": seg.get("start", 0),
+                        "duration": seg.get("duration", 0),
+                        "loudness_start": seg.get("loudness_max", -60),
+                        "loudness_max": seg.get("loudness_max", -60),
+                        "loudness_end": seg.get("loudness_end", -60),
+                    })
+
+                # Extract beat timings
+                self._beats = [b.get("start", 0) for b in data.get("beats", [])]
+
+                print(f"[SPOTIFY] Loaded audio analysis: {len(self._segments)} segments, {len(self._beats)} beats", flush=True)
+
+                # Update derived values
+                self._update_spotify_audio_values()
+        except Exception as e:
+            print(f"[SPOTIFY] Audio analysis error: {e}", flush=True)
+            self._segments = []
+            self._beats = []
+
     def _update_spotify_audio_values(self):
         """Update derived audio values based on track features and playback position."""
         if not self.is_playing:
@@ -475,20 +528,111 @@ class SpotifyClient:
             self.spotify_treble = 0.0
             return
 
-        # Use track energy as base
-        base_energy = self.track_energy
-
-        # Add some variation based on playback position to make it feel more alive
-        # Use tempo to create rhythmic variation
         import math
-        beat_phase = (time.time() * self.track_tempo / 60) % 1
-        beat_modulation = 0.1 * math.sin(beat_phase * math.pi * 2)
 
-        # Calculate values
-        self.spotify_energy = min(1.0, base_energy + beat_modulation * 0.3)
-        self.spotify_bass = min(1.0, base_energy * (0.8 + beat_modulation))
-        self.spotify_mid = min(1.0, self.track_danceability * (0.7 + beat_modulation * 0.5))
-        self.spotify_treble = min(1.0, (1 - self.track_valence) * 0.5 + beat_modulation * 0.3)
+        # Get current playback position in seconds
+        current_position_sec = self.progress_ms / 1000.0
+
+        # Try to use segment loudness data if available
+        if self._segments:
+            # Find the current segment based on playback position
+            current_loudness = -60.0
+            next_loudness = -60.0
+
+            for i, seg in enumerate(self._segments):
+                seg_start = seg["start"]
+                seg_end = seg_start + seg["duration"]
+
+                if seg_start <= current_position_sec < seg_end:
+                    # Current segment
+                    current_loudness = seg.get("loudness_max", -60)
+                    # Next segment for interpolation
+                    if i + 1 < len(self._segments):
+                        next_loudness = self._segments[i + 1].get("loudness_max", -60)
+                    break
+                elif seg_start > current_position_sec:
+                    # Past all segments, use last known
+                    current_loudness = self._segments[-1].get("loudness_max", -60) if self._segments else -60
+                    break
+
+            # Convert dB to 0-1 range (dB typically ranges from -60 to 0)
+            def db_to_linear(db):
+                return max(0, min(1, (db + 60) / 60))
+
+            current_linear = db_to_linear(current_loudness)
+            next_linear = db_to_linear(next_loudness)
+
+            # Interpolate between segments for smooth transitions
+            if current_position_sec < self._segments[-1]["start"] + self._segments[-1]["duration"]:
+                seg_idx = 0
+                for i, seg in enumerate(self._segments):
+                    if seg["start"] <= current_position_sec < seg["start"] + seg["duration"]:
+                        seg_idx = i
+                        break
+                seg = self._segments[seg_idx]
+                seg_progress = (current_position_sec - seg["start"]) / seg["duration"] if seg["duration"] > 0 else 0
+                segment_loudness = current_linear * (1 - seg_progress) + next_linear * seg_progress
+            else:
+                segment_loudness = current_linear
+
+            # Use actual segment loudness for energy
+            self.spotify_energy = min(0.95, segment_loudness * 0.9 + self.track_energy * 0.1)
+
+            # Bass follows loudness closely
+            self.spotify_bass = min(0.95, segment_loudness * 0.85 + self.track_energy * 0.15)
+
+            # Mid frequencies with some variation
+            self.spotify_mid = min(0.9, segment_loudness * 0.6 + self.track_danceability * 0.3)
+
+            # Treble varies with valence
+            self.spotify_treble = min(0.85, segment_loudness * 0.5 + (1 - self.track_valence) * 0.3)
+
+        else:
+            # Fallback: Use beat simulation based on tempo (original behavior)
+            now = time.time()
+
+            # Use track features as base
+            base_energy = self.track_energy
+            tempo = self.track_tempo  # BPM
+            danceability = self.track_danceability
+            valence = self.track_valence
+
+            # Create more dynamic beat simulation with multiple harmonics
+            # Beat at tempo
+            beat_phase = (now * tempo / 60) % 1
+            # Half-beat (eighth notes)
+            half_beat_phase = (now * tempo / 30) % 1
+
+            # Strong beat pulse (bass kicks on downbeats)
+            beat_pulse = (math.sin(beat_phase * math.pi * 2) + 1) / 2  # 0-1 range
+            # Secondary pulse for more energy
+            half_beat_pulse = (math.sin(half_beat_phase * math.pi * 2) + 1) / 2
+
+            # Combine for dynamic modulation (much larger amplitude)
+            # Bass responds strongly to beat
+            bass_mod = beat_pulse * 0.6 + half_beat_pulse * 0.3
+
+            # Mid frequencies follow danceability and beat
+            mid_mod = half_beat_pulse * 0.5 + danceability * 0.3
+
+            # Treble varies with valence (happier = more treble energy)
+            treble_mod = (1 - valence) * 0.3 + half_beat_pulse * 0.4
+
+            # Energy combines everything with base track energy
+            energy_mod = beat_pulse * 0.4 + 0.3
+
+            # Calculate final values - scale higher for more impact
+            # Bass: energy-based with strong beat modulation (up to 0.9)
+            self.spotify_bass = min(0.95, base_energy * 0.4 + bass_mod * 0.6)
+
+            # Mid: danceability-driven with rhythmic variation
+            self.spotify_mid = min(0.9, danceability * 0.5 + mid_mod * 0.4)
+
+            # Treble: valence-influenced with variation
+            self.spotify_treble = min(0.85, (1 - valence) * 0.4 + treble_mod * 0.4)
+
+            # Energy: overall intensity with beat
+            self.spotify_energy = min(0.95, base_energy * 0.5 + energy_mod * 0.5)
 
     def get_spotify_audio_values(self):
         """Get current audio values from Spotify for shader use."""

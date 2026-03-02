@@ -319,6 +319,22 @@ class AudioVisualizer(mglw.WindowConfig):
 
     def start_audio(self):
         """Start audio capture in background thread"""
+        # List available audio devices
+        try:
+            devices = sd.query_devices()
+            print("[AUDIO] Available input devices:", flush=True)
+            if isinstance(devices, dict):
+                # Single device
+                print(f"  Device {devices['index']}: {devices['name']} (channels: {devices['max_input_channels']})", flush=True)
+            else:
+                # Multiple devices
+                for i, dev in enumerate(devices):
+                    if dev['max_input_channels'] > 0:
+                        marker = " <-- USING THIS" if dev['index'] == self.config.get("device_index", 0) else ""
+                        print(f"  Device {dev['index']}: {dev['name']} (channels: {dev['max_input_channels']}){marker}", flush=True)
+        except Exception as e:
+            print(f"[AUDIO] Could not query devices: {e}", flush=True)
+
         try:
             self.stream = sd.InputStream(
                 device=self.config.get("device_index", 0),
@@ -329,7 +345,7 @@ class AudioVisualizer(mglw.WindowConfig):
                 dtype='float32'
             )
             self.stream.start()
-            print(f"Audio started using device {self.config.get('device_index', 0)}", flush=True)
+            print(f"[AUDIO] Started using device {self.config.get('device_index', 0)}", flush=True)
         except Exception as e:
             print(f"ERROR starting audio: {e}", flush=True)
             print("Run 'python -m sounddevice' to list available devices", flush=True)
@@ -463,8 +479,10 @@ class AudioVisualizer(mglw.WindowConfig):
 
         # Get Spotify audio values if available
         spotify_values = {"bass": 0, "mid": 0, "treble": 0, "energy": 0}
+        spotify_active = False
         if hasattr(self, 'spotify') and self.spotify.is_available() and self.spotify.is_playing:
             spotify_values = self.spotify.get_spotify_audio_values()
+            spotify_active = True
 
         # Blend mic and Spotify values (Spotify boosts when playing)
         # Use max of mic and spotify to make Spotify's energy more impactful
@@ -472,6 +490,12 @@ class AudioVisualizer(mglw.WindowConfig):
         mid = max(mic_mid, spotify_values["mid"] * 1.2)
         treble = max(mic_treble, spotify_values["treble"] * 1.2)
         energy = max(mic_energy, spotify_values["energy"] * 1.2)
+
+        # Determine which source is dominating for debug
+        dominant = "MIC"
+        if spotify_active:
+            if spotify_values["bass"] * 1.2 > mic_bass:
+                dominant = "SPOTIFY"
 
         # Clamp to 0-1
         bass = min(1.0, bass)
@@ -482,7 +506,13 @@ class AudioVisualizer(mglw.WindowConfig):
         # Print values every second for debugging
         current_time = time.time()
         if current_time - self.last_print_time >= self.print_interval:
-            print(f"Bass: {bass:.3f}  Mid: {mid:.3f}  Treble: {treble:.3f}  Energy: {energy:.3f}", flush=True)
+            mic_str = f"MIC: B={mic_bass:.2f} M={mic_mid:.2f} T={mic_treble:.2f} E={mic_energy:.2f}"
+            if spotify_active:
+                spotify_str = f" | SPOTIFY: B={spotify_values['bass']:.2f} M={spotify_values['mid']:.2f} T={spotify_values['treble']:.2f} E={spotify_values['energy']:.2f} [{dominant}]"
+            else:
+                spotify_str = " | SPOTIFY: inactive"
+            shader_name = getattr(self, 'current_shader_name', 'unknown')
+            print(f"[{shader_name}] {mic_str}{spotify_str}", flush=True)
             self.last_print_time = current_time
 
         # Apply brightness to energy
