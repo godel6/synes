@@ -10,6 +10,9 @@ uniform float u_treble;
 uniform float u_energy;
 uniform float u_lyrics;
 uniform float u_palette;
+uniform float u_hand_x;
+uniform float u_hand_y;
+uniform float u_hand_present;
 
 float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -28,7 +31,7 @@ float noise(vec2 p) {
 
 float fbm(vec2 p) {
     float v = 0.0, a = 0.5;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 3; i++) {
         v += a * noise(p);
         p *= 2.0;
         a *= 0.5;
@@ -48,6 +51,11 @@ void main() {
     vec2 center = uv - 0.5;
     float dist = length(center);
 
+    // Hand tracking - smooth glow effect
+    vec2 hand_pos = vec2(u_hand_x, 1.0 - u_hand_y);
+    float dist_to_hand = length(uv - hand_pos);
+    float hand_glow = smoothstep(0.4, 0.0, dist_to_hand) * u_hand_present * 0.5;
+
     float t = u_time * 0.2;
 
     vec3 neon = getNeonColor(u_palette);
@@ -60,7 +68,7 @@ void main() {
     // Multiple aurora bands
     float aurora = 0.0;
 
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 2; i++) {
         float fi = float(i);
         float offset = fi * 0.3;
         float speed = 0.2 + fi * 0.1;
@@ -81,14 +89,11 @@ void main() {
 
     // Color the aurora
     vec3 col = neon * aurora;
-    col += neon2 * fbm(uv * 5.0 + t) * 0.3;
+    col += neon2 * fbm(uv * 3.0 + t * 0.5) * 0.2;
 
     // Add glow at bottom
     float ground = smoothstep(0.4, 0.0, uv.y);
     col += neon2 * ground * 0.2;
-
-    // Mid adds subtle detail
-    col += neon * fbm(uv * 10.0 - t * 0.5) * u_mid * 0.3;
 
     // Treble sparkles
     float sparkle = noise(uv * 100.0 + t * 2.0);
@@ -97,6 +102,9 @@ void main() {
 
     // Energy brightness
     col *= 0.5 + u_energy * 0.5;
+
+    // Hand glow - soft light around hand
+    col += neon * hand_glow * 1.5;
 
     // Dark vignette
     col *= exp(-1.5 * dist);

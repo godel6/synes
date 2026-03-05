@@ -4,6 +4,7 @@ Fullscreen Python Audio Visualizer
 Captures microphone input, processes with FFT, renders reactive visuals with ModernGL
 """
 
+import argparse
 import json
 import os
 import sys
@@ -23,14 +24,240 @@ from utils import shader_downloader
 from utils.hand_tracker import create_hand_tracker
 
 
+def run_debug_mode(config):
+    """Run in debug mode - no window, just print audio/hand values."""
+    print("\n" + "=" * 60, flush=True)
+    print("  SYNES DEBUG MODE  |  press Ctrl+C to stop", flush=True)
+    print("=" * 60, flush=True)
+
+    # Initialize audio
+    audio_lock = threading.Lock()
+    bass = 0.0
+    mid = 0.0
+    treble = 0.0
+    energy = 0.0
+
+    audio_gain = config.get("audio", {}).get("gain", 2.5)
+    bass_boost = config.get("audio", {}).get("bass_boost", 1.0)
+    mid_boost = config.get("audio", {}).get("mid_boost", 1.0)
+    treble_boost = config.get("audio", {}).get("treble_boost", 1.0)
+    smoothing_factor = config.get("audio", {}).get("smoothing", 0.15)
+    bass_divisor = config.get("audio", {}).get("bass_divisor", 300)
+    mid_divisor = config.get("audio", {}).get("mid_divisor", 60)
+    treble_divisor = config.get("audio", {}).get("treble_divisor", 10)
+    energy_divisor = config.get("audio", {}).get("energy_divisor", 0.3)
+
+    sample_rate = config.get("sample_rate", 44100)
+    blocksize = config.get("blocksize", 2048)
+
+    def audio_callback(indata, frames, time_info, status):
+        nonlocal bass, mid, treble, energy
+        if status:
+            print(f"Audio status: {status}", flush=True)
+            return
+
+        # Compute FFT
+        fft = np.fft.rfft(indata[:, 0])
+        magnitude = np.abs(fft)
+        freqs = np.fft.rfftfreq(blocksize, 1 / sample_rate)
+
+        # Split into frequency bands
+        bass_mask = freqs < 200
+        mid_mask = (freqs >= 200) & (freqs < 2000)
+        treble_mask = freqs >= 2000
+
+        raw_bass = np.mean(magnitude[bass_mask]) if np.any(bass_mask) else 0
+        raw_mid = np.mean(magnitude[mid_mask]) if np.any(mid_mask) else 0
+        raw_treble = np.mean(magnitude[treble_mask]) if np.any(treble_mask) else 0
+
+        # Apply gains
+        raw_bass *= audio_gain * bass_boost
+        raw_mid *= audio_gain * mid_boost
+        raw_treble *= audio_gain * treble_boost
+
+        # Normalize
+        raw_bass = min(1.0, raw_bass / bass_divisor)
+        raw_mid = min(1.0, raw_mid / mid_divisor)
+        raw_treble = min(1.0, raw_treble / treble_divisor)
+
+        # RMS energy
+        raw_energy = np.sqrt(np.mean(indata ** 2)) * 10 / energy_divisor
+        raw_energy = min(1.0, raw_energy)
+
+        # Smooth
+        with audio_lock:
+            bass = bass * smoothing_factor + raw_bass * (1 - smoothing_factor)
+            mid = mid * smoothing_factor + raw_mid * (1 - smoothing_factor)
+            treble = treble * smoothing_factor + raw_treble * (1 - smoothing_factor)
+            energy = energy * smoothing_factor + raw_energy * (1 - smoothing_factor)
+
+    # Start audio stream
+    try:
+        stream = sd.InputStream(
+            device=config.get("device_index", 0),
+            channels=1,
+            samplerate=sample_rate,
+            blocksize=blocksize,
+            callback=audio_callback,
+            dtype='float32'
+        )
+        stream.start()
+        print(f"[AUDIO] Started using device {config.get('device_index', 0)}", flush=True)
+    except Exception as e:
+        print(f"ERROR starting audio: {e}", flush=True)
+        print("Run 'python -m sounddevice' to list available devices", flush=True)
+        return
+
+    # Initialize hand tracker
+    hand_tracker = create_hand_tracker(config)
+    if hand_tracker:
+        hand_tracker.start()
+
+    # Initialize Spotify
+    spotify = None
+    if config.get("spotify", {}).get("enabled", True):
+        try:
+            spotify = SpotifyClient(config)
+            spotify.authenticate()
+            if spotify.is_available():
+                spotify.start_polling()
+                print("[Spotify] Polling started", flush=True)
+        except Exception as e:
+            print(f"[Spotify] Init error: {e}", flush=True)
+
+    # Get available shaders
+    shaders_dir = Path("shaders")
+    available_shaders = sorted(shaders_dir.glob("*.frag")) if shaders_dir.exists() else []
+    shader_names = [s.stem for s in available_shaders]
+
+    # Debug tracking
+    bass_zero_start = None
+    hand_zero_start = None
+    all_zero_start = None
+    start_time = time.time()
+    last_print_time = 0
+    print_interval = 1.0
+
+    # Track key press for keeping running
+    import msvcrt
+    key_pressed = False
+
+    def check_key():
+        """Check if a key was pressed (non-blocking on Windows)."""
+        return msvcrt.kbhit()
+
+    print("\nStarting debug output... (press any key to keep running after 5s)\n", flush=True)
+
+    try:
+        while True:
+            current_time = time.time()
+            elapsed = current_time - start_time
+
+            # Get values
+            with audio_lock:
+                current_bass = bass
+                current_mid = mid
+                current_treble = treble
+                current_energy = energy
+
+            hand_x, hand_y, hand_present = 0.5, 0.5, 0.0
+            if hand_tracker:
+                hand_x, hand_y, hand_present = hand_tracker.get_position()
+
+            # Get Spotify info
+            spotify_info = ""
+            if spotify and spotify.is_available():
+                track = getattr(spotify, 'current_title', None) or "Unknown"
+                artist = getattr(spotify, 'current_artist', None) or ""
+                pos = spotify.progress_ms or 0
+                lyric_line = ""
+                if hasattr(spotify, 'current_lyric') and spotify.current_lyric:
+                    lyric_line = f'\n  [Lyrics]  "{spotify.current_lyric}"'
+                spotify_info = f"\n  [Spotify] {artist} - {track} | pos={pos}ms{lyric_line}"
+
+            # Get current shader (first one for demo)
+            current_shader = shader_names[0] if shader_names else "none"
+
+            # Print every second
+            if current_time - last_print_time >= print_interval:
+                last_print_time = current_time
+
+                # ASCII bar helper
+                def make_bar(value, width=10):
+                    filled = int(value * width)
+                    return "█" * filled + "░" * (width - filled)
+
+                print(f"""
+┌─────────────────────────────────────────────────────┐
+│  SYNES DEBUG MODE  |  elapsed={elapsed:5.1f}s              │
+├──────────┬─────────┬─────────┬─────────┬────────────┤
+│  bass    │  mid    │ treble  │ energy  │  hand      │
+├──────────┼─────────┼─────────┼─────────┼────────────┤
+│  {current_bass:5.2f}  │  {current_mid:5.2f}  │  {current_treble:5.2f}  │  {current_energy:5.2f}  │ x={hand_x:.2f}     │
+│  {make_bar(current_bass)} │ {make_bar(current_mid)} │ {make_bar(current_treble)} │ {make_bar(current_energy)} │ y={hand_y:.2f}     │
+│          │         │         │         │ present={int(hand_present)} ─┘{spotify_info}
+  [Shader]  would render: shaders/{current_shader}.frag""", flush=True)
+
+            # Warnings (only print once when first triggered)
+            if current_bass < 0.01:
+                if bass_zero_start is None:
+                    bass_zero_start = current_time
+                elif 3 < current_time - bass_zero_start < 3.2:
+                    print(f"  WARN: bass stuck at 0.0 for 3+s -> likely wrong audio device", flush=True)
+            else:
+                bass_zero_start = None
+
+            if hand_present < 0.5:
+                if hand_zero_start is None:
+                    hand_zero_start = current_time
+                elif 10 < current_time - hand_zero_start < 10.2:
+                    print(f"  WARN: hand_present always 0 for 10+s -> likely wrong camera index", flush=True)
+            else:
+                hand_zero_start = None
+
+            if current_bass < 0.01 and current_mid < 0.01 and current_treble < 0.01 and current_energy < 0.01:
+                if all_zero_start is None:
+                    all_zero_start = current_time
+                elif 3 < current_time - all_zero_start < 3.2:
+                    print(f"  WARN: all uniforms at 0.0 -> audio thread may have crashed", flush=True)
+            else:
+                all_zero_start = None
+
+            # Auto-exit after 5 seconds if no key pressed
+            if elapsed > 5 and not key_pressed:
+                if check_key():
+                    msvcrt.getch()  # Consume the key
+                    key_pressed = True
+                    print("\n[DEBUG] Key pressed, continuing...", flush=True)
+
+            time.sleep(0.1)
+
+    except KeyboardInterrupt:
+        print("\n\n[DEBUG] Stopped by user", flush=True)
+
+    # Cleanup
+    stream.stop()
+    stream.close()
+    if hand_tracker:
+        hand_tracker.stop()
+    if spotify:
+        spotify.stop_polling()
+
+    print("[DEBUG] Cleanup complete", flush=True)
+
+
 class AudioVisualizer(mglw.WindowConfig):
     gl_version = (3, 3)
     title = "Synesthesia Visualizer"
     window_type = "pygame2"
     aspect_ratio = None
     resizable = True
-    vsync = False
-    samples = 4
+    vsync = True
+    samples = 2
+
+    # Command-line shader selection
+    _initial_shader_index = None
+    _initial_shader_name = None
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -44,6 +271,7 @@ class AudioVisualizer(mglw.WindowConfig):
         self.default_height = visuals_config.get("default_height", 720)
         self.brightness = visuals_config.get("brightness", 1.0)
         self.show_lyrics = visuals_config.get("show_lyrics", False)
+        self.debug_output = visuals_config.get("debug_output", False)
         palette_str = visuals_config.get("palette", "default")
         self.palette_map = {"default": 0, "warm": 1, "cool": 2, "neon": 3, "mono": 4}
         self.palette_names = ["default", "warm", "cool", "neon", "mono"]
@@ -90,6 +318,28 @@ class AudioVisualizer(mglw.WindowConfig):
         self.available_shaders = self.load_shaders()
         self.current_shader_idx = 0
 
+        # Handle shader selection (class variables or config)
+        target_shader = None
+
+        # Priority: class vars > config > default
+        if AudioVisualizer._initial_shader_index is not None:
+            idx = AudioVisualizer._initial_shader_index
+            if 0 <= idx < len(self.available_shaders):
+                self.current_shader_idx = idx
+        elif AudioVisualizer._initial_shader_name is not None:
+            target_shader = AudioVisualizer._initial_shader_name.lower()
+        else:
+            # Check config for default_shader
+            default_shader = self.config.get("visuals", {}).get("default_shader")
+            if default_shader:
+                target_shader = default_shader.lower()
+
+        if target_shader:
+            for i, s in enumerate(self.available_shaders):
+                if s.stem.lower() == target_shader:
+                    self.current_shader_idx = i
+                    break
+
         if not self.available_shaders:
             print("ERROR: No shaders found in shaders/ folder", flush=True)
             sys.exit(1)
@@ -112,8 +362,8 @@ class AudioVisualizer(mglw.WindowConfig):
         print(f"Found {len(self.available_shaders)} shader(s)", flush=True)
         print(f"Default window size: {self.default_width}x{self.default_height}", flush=True)
 
-        # Load initial shader
-        self.load_shader(self.available_shaders[0])
+        # Load initial shader (use the one we selected)
+        self.load_shader(self.available_shaders[self.current_shader_idx])
 
         # Start audio capture in background thread
         self.start_audio()
@@ -153,7 +403,8 @@ class AudioVisualizer(mglw.WindowConfig):
                     "default_width": 1280,
                     "default_height": 720,
                     "brightness": 1.0,
-                    "palette": "default"
+                    "palette": "default",
+                    "debug_output": False
                 },
                 "audio": {
                     "gain": 1.5,
@@ -503,9 +754,9 @@ class AudioVisualizer(mglw.WindowConfig):
         treble = min(1.0, treble)
         energy = min(1.0, energy)
 
-        # Print values every second for debugging
+        # Print values every second for debugging (only if debug_output enabled)
         current_time = time.time()
-        if current_time - self.last_print_time >= self.print_interval:
+        if self.debug_output and current_time - self.last_print_time >= self.print_interval:
             mic_str = f"MIC: B={mic_bass:.2f} M={mic_mid:.2f} T={mic_treble:.2f} E={mic_energy:.2f}"
             if spotify_active:
                 spotify_str = f" | SPOTIFY: B={spotify_values['bass']:.2f} M={spotify_values['mid']:.2f} T={spotify_values['treble']:.2f} E={spotify_values['energy']:.2f} [{dominant}]"
@@ -556,15 +807,6 @@ class AudioVisualizer(mglw.WindowConfig):
                     self.program['u_hand_y'].value = hand_y
                 if 'u_hand_present' in self.program:
                     self.program['u_hand_present'].value = hand_present
-
-                # Debug output every 60 frames
-                if hasattr(self, '_hand_debug_counter'):
-                    self._hand_debug_counter += 1
-                else:
-                    self._hand_debug_counter = 0
-
-                if self._hand_debug_counter % 60 == 0:
-                    print(f"[RENDER] Hand: x={hand_x:.3f}, y={hand_y:.3f}, present={hand_present:.1f}", flush=True)
 
             # Render fullscreen quad
             self.ctx.clear(0, 0, 0, 1)
@@ -720,6 +962,49 @@ class AudioVisualizer(mglw.WindowConfig):
         self.wnd.close()
 
 
+def load_config():
+    """Load config from JSON or create with defaults"""
+    config_path = Path("config.json")
+
+    if not config_path.exists():
+        default_config = {
+            "device_index": 0,
+            "sample_rate": 44100,
+            "blocksize": 2048,
+            "visuals": {
+                "default_width": 1280,
+                "default_height": 720,
+                "brightness": 1.0,
+                "palette": "default",
+                "debug_output": False
+            },
+            "audio": {
+                "gain": 1.5,
+                "bass_boost": 1.0,
+                "mid_boost": 1.0,
+                "treble_boost": 1.0,
+                "smoothing": 0.3
+            }
+        }
+        with open(config_path, 'w') as f:
+            json.dump(default_config, f, indent=2)
+        print("\n" + "=" * 50, flush=True)
+        print("config.json created with defaults", flush=True)
+        print("Please check that device_index is correct for your mic", flush=True)
+        print("Run 'python -m sounddevice' to list available devices", flush=True)
+        print("=" * 50 + "\n", flush=True)
+
+    with open(config_path, 'r') as f:
+        return json.load(f)
+
+
 if __name__ == "__main__":
-    # Start in windowed mode (no -fs flag)
-    mglw.run_window_config(AudioVisualizer)
+    # Quick check for --debug flag before moderngl imports
+    debug_mode = "--debug" in sys.argv
+
+    if debug_mode:
+        config = load_config()
+        run_debug_mode(config)
+    else:
+        # Start in windowed mode - moderngl-window handles its own args
+        mglw.run_window_config(AudioVisualizer)

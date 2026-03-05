@@ -10,6 +10,9 @@ uniform float u_treble;
 uniform float u_energy;
 uniform float u_lyrics;
 uniform float u_palette;
+uniform float u_hand_x;
+uniform float u_hand_y;
+uniform float u_hand_present;
 
 float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -48,6 +51,11 @@ void main() {
     vec2 center = uv - 0.5;
     float dist = length(center);
 
+    // Hand tracking - smooth glow effect
+    vec2 hand_pos = vec2(u_hand_x, 1.0 - u_hand_y);
+    float dist_to_hand = length(uv - hand_pos);
+    float hand_glow = smoothstep(0.4, 0.0, dist_to_hand) * u_hand_present * 0.5;
+
     float t = u_time;
     float speed = 0.2 + u_bass * 0.5;
 
@@ -57,7 +65,7 @@ void main() {
     vec3 color = vec3(0.0);
 
     // Star field
-    for (int i = 0; i < 80; i++) {
+    for (int i = 0; i < 30; i++) {
         float fi = float(i);
         vec2 starPos = vec2(hash(vec2(fi * 1.23, fi * 0.456)), hash(vec2(fi * 2.789, fi * 1.345)));
 
@@ -101,6 +109,9 @@ void main() {
     // Center glow
     float centerGlow = 0.02 / (dist + 0.1);
     color += neon2 * centerGlow * 0.3;
+
+    // Hand glow - soft light around hand
+    color += neon * hand_glow * 1.5;
 
     // Vignette
     float vignette = 1.0 - dist * 0.4;

@@ -10,8 +10,11 @@ uniform float u_treble;
 uniform float u_energy;
 uniform float u_lyrics;
 uniform float u_palette;
+uniform float u_hand_x;
+uniform float u_hand_y;
+uniform float u_hand_present;
 
-#define iters 100
+#define iters 30
 
 float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -49,6 +52,11 @@ void main() {
     vec2 center = uv - 0.5;
     float dist = length(center);
 
+    // Hand tracking - smooth glow effect
+    vec2 hand_pos = vec2(u_hand_x, 1.0 - u_hand_y);
+    float dist_to_hand = length(uv - hand_pos);
+    float hand_glow = smoothstep(0.4, 0.0, dist_to_hand) * u_hand_present * 0.5;
+
     float t = u_time;
     float pulse = 0.5 + u_bass * 1.8 + u_mid * 0.5;
 
@@ -70,6 +78,9 @@ void main() {
 
     // Energy brightness
     color *= 0.5 + u_energy * 0.5;
+
+    // Hand glow - soft light around hand
+    color += getNeonColor(u_palette) * hand_glow * 1.5;
 
     // Vignette
     float vignette = 1.0 - dist * 0.5;

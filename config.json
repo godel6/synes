@@ -1,13 +1,15 @@
 {
-  "device_index": 0,
-  "sample_rate": 44100,
+  "device_index": 1,
+  "sample_rate": 48000,
   "blocksize": 2048,
   "visuals": {
     "default_width": 1280,
     "default_height": 720,
     "brightness": 1.0,
     "palette": "default",
-    "show_lyrics": true
+    "show_lyrics": true,
+    "default_shader": "plasma",
+    "debug_output": false
   },
   "audio": {
     "gain": 1.5,
@@ -30,6 +32,7 @@
     "enabled": true,
     "camera_index": 0,
     "smoothing": 0.3,
-    "debug": true
+    "debug": false,
+    "test_mode": false
   }
 }
